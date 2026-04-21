@@ -1,6 +1,6 @@
-"""Dispatch hook events to configured shell commands.
+"""将钩子事件分发给配置的 Shell 命令。
 
-Hook event functions:
+钩子事件函数：
   fire_pre_tool(tool_name, tool_input, session_id, cwd) -> HookDecision
   fire_post_tool(tool_name, tool_input, tool_response, session_id, cwd) -> None
   fire_stop(stop_reason, session_id, cwd) -> None
@@ -14,21 +14,21 @@ from .executor import run_hook
 from .types import HookDecision, HookMatcher
 
 
-# ── Matcher ────────────────────────────────────────────────────────────────
+# ── 匹配器 ────────────────────────────────────────────────────────────────
 
 def _matches(matcher: str, tool_name: str) -> bool:
-    """Return True if matcher applies to tool_name.
+    """判断匹配规则是否适用于当前工具名。
 
-    Rules:
-      - "" or "*" → matches everything
-      - otherwise → exact match OR tool_name starts with matcher
+    规则：
+      - "" 或 "*" → 匹配所有内容
+      - 其他情况 → 完全相等 或 工具名以匹配规则开头
     """
     if not matcher or matcher == "*":
         return True
     return tool_name == matcher or tool_name.startswith(matcher)
 
 
-# ── Pre-tool hook ──────────────────────────────────────────────────────────
+# ── 工具执行前钩子 ──────────────────────────────────────────────────────────
 
 def fire_pre_tool(
     tool_name: str,
@@ -36,12 +36,12 @@ def fire_pre_tool(
     session_id: str,
     cwd: str,
 ) -> HookDecision:
-    """Run all matching PreToolUse hooks and return the resulting decision.
+    """运行所有匹配的 PreToolUse 钩子，并返回最终决策结果。
 
-    Decision priority:
-      - First 'block' response → immediately return block (abort tool)
-      - Any 'approve' response → return approve (skip permission prompt)
-      - No decision or 'ask' → return ask (normal permission flow)
+    决策优先级：
+      - 第一个 'block' 响应 → 立即返回阻止（中止工具调用）
+      - 任意 'approve' 响应 → 返回批准（跳过权限提示）
+      - 无决策或 'ask' → 返回询问（执行正常权限流程）
     """
     cfg = get_hooks_config(cwd)
     stdin_data = {
@@ -70,7 +70,7 @@ def fire_pre_tool(
     return HookDecision(decision="ask")
 
 
-# ── Post-tool hook ─────────────────────────────────────────────────────────
+# ── 工具执行后钩子 ─────────────────────────────────────────────────────────
 
 def fire_post_tool(
     tool_name: str,
@@ -79,7 +79,7 @@ def fire_post_tool(
     session_id: str,
     cwd: str,
 ) -> None:
-    """Run all matching PostToolUse hooks (fire-and-forget, no decision)."""
+    """运行所有匹配的 PostToolUse 钩子（触发后无需等待，不影响决策）。"""
     cfg = get_hooks_config(cwd)
     stdin_data = {
         "session_id": session_id,
@@ -95,10 +95,10 @@ def fire_post_tool(
             run_hook(hcmd.command, stdin_data)
 
 
-# ── Stop hook ──────────────────────────────────────────────────────────────
+# ── 停止事件钩子 ──────────────────────────────────────────────────────────────
 
 def fire_stop(stop_reason: str, session_id: str, cwd: str) -> None:
-    """Run all Stop hooks after the agent turn completes."""
+    """在智能体回合完成后，运行所有 Stop 钩子。"""
     cfg = get_hooks_config(cwd)
     stdin_data = {
         "session_id": session_id,
@@ -110,10 +110,10 @@ def fire_stop(stop_reason: str, session_id: str, cwd: str) -> None:
             run_hook(hcmd.command, stdin_data)
 
 
-# ── Notification hook ──────────────────────────────────────────────────────
+# ── 通知事件钩子 ──────────────────────────────────────────────────────
 
 def fire_notification(message: str, session_id: str, cwd: str) -> None:
-    """Run all Notification hooks (e.g. for permission prompts)."""
+    """运行所有 Notification 钩子（例如用于权限提示）。"""
     cfg = get_hooks_config(cwd)
     stdin_data = {
         "session_id": session_id,
@@ -125,7 +125,7 @@ def fire_notification(message: str, session_id: str, cwd: str) -> None:
             run_hook(hcmd.command, stdin_data)
 
 
-# ── Pre-compact hook ───────────────────────────────────────────────────────
+# ── 上下文压缩前钩子 ───────────────────────────────────────────────────────
 
 def fire_pre_compact(
     messages_count: int,
@@ -133,7 +133,7 @@ def fire_pre_compact(
     session_id: str,
     cwd: str,
 ) -> None:
-    """Run all PreCompact hooks before context compaction."""
+    """在上下文压缩之前，运行所有 PreCompact 钩子。"""
     cfg = get_hooks_config(cwd)
     stdin_data = {
         "session_id": session_id,

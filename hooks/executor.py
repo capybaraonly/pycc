@@ -1,4 +1,4 @@
-"""Run a single hook shell command and return its parsed JSON output."""
+"""执行单个钩子 Shell 命令，并返回解析后的 JSON 输出。"""
 from __future__ import annotations
 
 import json
@@ -7,18 +7,18 @@ import sys
 
 
 def run_hook(command: str, stdin_data: dict, timeout: int = 10) -> dict | None:
-    """Execute a hook command, feeding stdin_data as JSON on stdin.
+    """执行钩子命令，将 stdin_data 以 JSON 格式传入标准输入。
 
-    Args:
-        command:    shell command string (run with shell=True)
-        stdin_data: dict serialized to JSON and passed on stdin
-        timeout:    seconds before the process is killed (default 10)
+    参数:
+        command:    Shell 命令字符串（使用 shell=True 运行）
+        stdin_data: 序列化为 JSON 并传递给标准输入的字典
+        timeout:    进程被强制终止前的超时秒数（默认 10 秒）
 
-    Returns:
-        Parsed JSON dict from stdout, or None on error / non-zero exit.
+    返回:
+        从标准输出解析出的 JSON 字典，出错 / 非零退出时返回 None。
 
-    Side effects:
-        Prints a warning to stderr on failure (non-zero exit, timeout, exception).
+    副作用:
+        执行失败时（非零退出码、超时、异常）向标准错误输出警告信息。
     """
     try:
         proc = subprocess.run(
@@ -29,17 +29,17 @@ def run_hook(command: str, stdin_data: dict, timeout: int = 10) -> dict | None:
             timeout=timeout,
         )
     except subprocess.TimeoutExpired:
-        print(f"[hooks] Warning: hook timed out after {timeout}s: {command!r}", file=sys.stderr)
+        print(f"[hooks] 警告：钩子执行超时（{timeout}秒）：{command!r}", file=sys.stderr)
         return None
     except Exception as exc:
-        print(f"[hooks] Warning: hook failed to start: {exc}", file=sys.stderr)
+        print(f"[hooks] 警告：钩子启动失败：{exc}", file=sys.stderr)
         return None
 
     if proc.returncode != 0:
         stderr_text = proc.stderr.decode(errors="replace").strip()
-        msg = f"[hooks] Warning: hook exited {proc.returncode}: {command!r}"
+        msg = f"[hooks] 警告：钩子退出码 {proc.returncode}：{command!r}"
         if stderr_text:
-            msg += f"\n  stderr: {stderr_text[:300]}"
+            msg += f"\n  错误输出：{stderr_text[:300]}"
         print(msg, file=sys.stderr)
         return None
 
@@ -50,5 +50,5 @@ def run_hook(command: str, stdin_data: dict, timeout: int = 10) -> dict | None:
     try:
         return json.loads(stdout)
     except json.JSONDecodeError:
-        # Hook printed non-JSON — ignore output, treat as success with no decision
+        # 钩子输出了非 JSON 内容 —— 忽略输出，视为无决策的成功执行
         return {}
