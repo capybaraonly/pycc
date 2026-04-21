@@ -1,56 +1,57 @@
 #!/usr/bin/env python3
 """
-pycc — Minimal Python implementation of Claude Code.
+pycc — Claude Code 的极简 Python 实现。
 
-Usage:
-  python pycc.py [options] [prompt]
+使用方法:
+  python pycc.py [选项] [提示词]
 
-Options:
-  -p, --print          Non-interactive: run prompt and exit (also --print-output)
-  -m, --model MODEL    Override model
-  --accept-all         Never ask permission (dangerous)
-  --verbose            Show thinking + token counts
-  --version            Print version and exit
+选项:
+  -p, --print          非交互模式: 执行提示词后退出 (同 --print-output)
+  -m, --model MODEL    覆盖模型配置
+  --accept-all         无需授权确认 (危险操作)
+  --verbose            显示思考过程 + 令牌计数
+  --version            打印版本信息并退出
 
-Slash commands in REPL:
-  /help       Show this help
-  /clear      Clear conversation
-  /model [m]  Show or set model
-  /config     Show config / set key=value
-  /save [f]   Save session to file
-  /load [f]   Load session from file
-  /history    Print conversation history
-  /context    Show context window usage
-  /cost       Show API cost this session
-  /verbose    Toggle verbose mode
-  /thinking   Toggle extended thinking
-  /permissions [mode]  Set permission mode
-  /cwd [path] Show or change working directory
-  /memory [query]         Show/search persistent memories
-  /memory consolidate     Extract long-term insights from current session via AI
-  /skills           List available skills
-  /agents           Show sub-agent tasks
-  /mcp              List MCP servers and their tools
-  /mcp reload       Reconnect all MCP servers
-  /mcp add <n> <cmd> [args]  Add a stdio MCP server
-  /mcp remove <n>   Remove an MCP server from config
-  /tasks            List all tasks
-  /tasks create <subject>    Quick-create a task
-  /tasks start/done/cancel <id>  Update task status
-  /tasks delete <id>         Delete a task
-  /tasks get <id>            Show full task details
-  /tasks clear               Delete all tasks
-  /exit /quit Exit
+交互模式斜杠命令:
+  /help       显示帮助信息
+  /clear      清空对话记录
+  /model [m]  查看或设置模型
+  /config     查看配置 / 设置 key=value
+  /save [f]   保存会话到文件
+  /load [f]   从文件加载会话
+  /history    打印对话历史
+  /context    显示上下文窗口使用情况
+  /cost       显示本次会话的 API 费用
+  /verbose    切换详细模式
+  /thinking   切换扩展思考模式
+  /permissions [mode]  设置权限模式
+  /cwd [path] 查看或切换工作目录
+  /memory [query]         查看/搜索持久化记忆
+  /memory consolidate     通过 AI 从当前会话提取长期洞察
+  /skills           列出可用技能
+  /agents           显示子代理任务
+  /mcp              列出 MCP 服务器及其工具
+  /mcp reload       重新连接所有 MCP 服务器
+  /mcp add <n> <cmd> [args]  添加标准输入输出 MCP 服务器
+  /mcp remove <n>   从配置中移除 MCP 服务器
+  /tasks            列出所有任务
+  /tasks create <subject>    快速创建任务
+  /tasks start/done/cancel <id>  更新任务状态
+  /tasks delete <id>         删除任务
+  /tasks get <id>            显示任务完整详情
+  /tasks clear               删除所有任务
+  /exit /quit 退出程序
 """
 from __future__ import annotations
 
 import sys
+# 检查 Python 版本，低于 3.10 则退出
 if sys.version_info < (3, 10):
     sys.exit(
-        f"pycc requires Python \u2265 3.10. "
-        f"Detected: {sys.version}\n"
-        f"Hint: try running with python3.10 or newer "
-        f"(e.g. /opt/miniconda3/bin/python3.13 pycc.py)"
+        f"pycc 需要 Python 版本 ≥ 3.10。"
+        f"当前检测版本: {sys.version}\n"
+        f"提示: 尝试使用 python3.10 或更新版本运行 "
+        f"(例如 /opt/miniconda3/bin/python3.13 pycc.py)"
     )
 
 from tools import ask_input_interactive
@@ -58,13 +59,15 @@ from tools import ask_input_interactive
 import os
 import re
 import uuid
+# Windows 系统下启用 ANSI 转义码支持
 if sys.platform == "win32":
-    os.system("")  # Enable ANSI escape codes on Windows CMD
+    os.system("")
 import json
+# 导入 readline 用于命令行补全，Windows 兼容处理
 try:
     import readline
 except ImportError:
-    readline = None  # Windows compatibility
+    readline = None
 import atexit
 import argparse
 import textwrap
@@ -72,7 +75,8 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional, Union
 import threading
-# ── Optional rich for markdown rendering ──────────────────────────────────
+
+# 可选依赖：用于 Markdown 渲染的 rich 库
 try:
     from rich.console import Console
     from rich.markdown import Markdown
@@ -86,9 +90,10 @@ except ImportError:
     _RICH = False
     console = None
 
+# 版本号
 VERSION = "3.05.5"
 
-# ── ANSI helpers (used even with rich for non-markdown output) ─────────────
+# ANSI 颜色代码定义（即使使用 rich 也会用于非 Markdown 输出）
 C = {
     "cyan":    "\033[36m",
     "green":   "\033[32m",
@@ -101,17 +106,20 @@ C = {
     "reset":   "\033[0m",
 }
 
+# 为文本添加颜色样式
 def clr(text: str, *keys: str) -> str:
     return "".join(C[k] for k in keys) + str(text) + C["reset"]
 
+# 日志打印工具函数
 def info(msg: str):   print(clr(msg, "cyan"))
 def ok(msg: str):     print(clr(msg, "green"))
-def warn(msg: str):   print(clr(f"Warning: {msg}", "yellow"))
-def err(msg: str):    print(clr(f"Error: {msg}", "red"), file=sys.stderr)
+def warn(msg: str):   print(clr(f"警告: {msg}", "yellow"))
+def err(msg: str):    print(clr(f"错误: {msg}", "red"), file=sys.stderr)
 
 
+# 渲染差异文本，红色表示删除，绿色表示新增
 def render_diff(text: str):
-    """Print diff text with ANSI colors: red for removals, green for additions."""
+    """打印带 ANSI 颜色的差异文本：红色删除，绿色新增。"""
     for line in text.splitlines():
         if line.startswith("+++") or line.startswith("---"):
             print(C["bold"] + line + C["reset"])
@@ -124,33 +132,36 @@ def render_diff(text: str):
         else:
             print(line)
 
+# 检查文本是否包含标准格式的差异内容
 def _has_diff(text: str) -> bool:
-    """Check if text contains a unified diff."""
+    """检查文本是否包含统一差异格式内容。"""
     return "--- a/" in text and "+++ b/" in text
 
 
-# ── Conversation rendering ─────────────────────────────────────────────────
+# 对话渲染相关全局变量
+_accumulated_text: list[str] = []   # 流式输出时的文本缓冲区
+_current_live: "Live | None" = None  # 活跃的 Rich 实时渲染实例
+_RICH_LIVE = True  # 通过配置 rich_live=false 可禁用原地实时流式输出
 
-_accumulated_text: list[str] = []   # buffer text during streaming
-_current_live: "Live | None" = None  # active Rich Live instance (one at a time)
-_RICH_LIVE = True  # set to False (via config rich_live=false) to disable in-place Live streaming
-
+# 创建可渲染对象：包含标记则返回 Markdown，否则返回纯文本
 def _make_renderable(text: str):
-    """Return a Rich renderable: Markdown if text contains markup, else plain."""
+    """返回 Rich 可渲染对象：包含标记则用 Markdown，否则用纯文本。"""
     if any(c in text for c in ("#", "*", "`", "_", "[")):
         return Markdown(text)
     return text
 
+# 启动 Rich 实时渲染块（无 Rich 则不执行）
 def _start_live() -> None:
-    """Start a Rich Live block for in-place Markdown streaming (no-op if not Rich)."""
+    """启动 Rich 实时块用于原地 Markdown 流式渲染（无 Rich 则空操作）。"""
     global _current_live
     if _RICH and _RICH_LIVE and _current_live is None:
         _current_live = Live(console=console, auto_refresh=False,
                              vertical_overflow="visible")
         _current_live.start()
 
+# 流式输出文本片段
 def stream_text(chunk: str) -> None:
-    """Buffer chunk; update Live in-place when Rich available, else print directly."""
+    """缓冲文本片段；Rich 可用时原地更新实时渲染，否则直接打印。"""
     global _current_live
     _accumulated_text.append(chunk)
     if _RICH and _RICH_LIVE:
@@ -160,17 +171,18 @@ def stream_text(chunk: str) -> None:
     else:
         print(chunk, end="", flush=True)
 
+# 流式输出思考过程（仅详细模式下显示）
 def stream_thinking(chunk: str, verbose: bool):
     if verbose:
-        # Strip internal newlines when models stream token-by-token (like Qwen).
+        # 清理模型逐令牌流式输出时的内部换行符
         clean_chunk = chunk.replace("\n", " ")
         if clean_chunk:
-            # We explicitly do NOT use clr() wrapper here to avoid outputting \033[0m (reset)
-            # after every single token. Repeated ANSI resets can cause formatting glitches and vertical cascades.
+            # 此处不使用 clr() 包装，避免每个令牌后输出重置符导致格式异常
             print(f"{C['dim']}{clean_chunk}", end="", flush=True)
 
+# 刷新响应内容，结束实时渲染
 def flush_response() -> None:
-    """Commit buffered text to screen: stop Live (freezes rendered Markdown in place)."""
+    """提交缓冲文本到屏幕：停止实时渲染（固定 Markdown 渲染结果）。"""
     global _current_live
     full = "".join(_accumulated_text)
     _accumulated_text.clear()
@@ -178,48 +190,52 @@ def flush_response() -> None:
         _current_live.stop()
         _current_live = None
     elif _RICH and _RICH_LIVE and full.strip():
-        # Fallback: no Live was running but Rich is available (e.g. after thinking)
+        # 备用方案：无实时渲染但 Rich 可用时直接渲染
         console.print(_make_renderable(full))
     else:
-        print()  # ensure newline after plain-text stream
+        print()
 
+# 工具执行加载动画文案
 _TOOL_SPINNER_PHRASES = [
-    "⚡ Rewriting light speed...",
-    "🏁 Winning a race against light...",
-    "🤔 Who is Barry Allen?...",
-    "🐆 Outrunning the compiler...",
-    "💨 Leaving electrons behind...",
-    "🌍 Orbiting the codebase...",
-    "⏱️ Breaking the sound barrier...",
-    "🔥 Faster than a hot reload...",
-    "🚀 Terminal velocity reached...",
-    "🐾 Claw marks on the stack...",
-    "🏎️ Shifting to 6th gear...",
-    "⚡ Speed force activated...",
-    "🌪️ Blitzing through the AST...",
-    "💫 Bending spacetime...",
-    "🐆 Pycc mode engaged...",
+    "⚡ 光速重构中...",
+    "🏁 与光速赛跑...",
+    "🤔 巴里·艾伦是谁？...",
+    "🐆 超越编译器...",
+    "💨 甩开电子...",
+    "🌍 环绕代码库...",
+    "⏱️ 突破音障...",
+    "🔥 比热重载更快...",
+    "🚀 达到终端速度...",
+    "🐾 在栈上留下爪痕...",
+    "🏎️ 切换6档...",
+    "⚡ 速度之力已激活...",
+    "🌪️ 闪电般遍历抽象语法树...",
+    "💫 扭曲时空...",
+    "🐆 Pycc 模式启动...",
 ]
 
+# 辩论加载动画文案
 _DEBATE_SPINNER_PHRASES = [
-    "⚔️  Experts taking their positions...",
-    "🧠  Experts formulating arguments...",
-    "🗣️  Debate in progress...",
-    "⚖️  Weighing the evidence...",
-    "💡  Building counter-arguments...",
-    "🔥  Debate heating up...",
-    "📜  Drafting the consensus...",
-    "🎯  Finding common ground...",
+    "⚔️  专家各就各位...",
+    "🧠  专家构建论点中...",
+    "🗣️  辩论进行中...",
+    "⚖️  权衡证据...",
+    "💡  构建反驳论点...",
+    "🔥  辩论白热化...",
+    "📜  起草共识...",
+    "🎯  寻找共同点...",
 ]
 
+# 工具加载动画线程相关变量
 _tool_spinner_thread = None
 _tool_spinner_stop = threading.Event()
 
 _spinner_phrase = ""
 _spinner_lock = threading.Lock()
 
+# 后台运行工具加载动画
 def _run_tool_spinner():
-    """Background spinner on a single line using carriage return."""
+    """后台线程运行单行加载动画。"""
     chars = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
     i = 0
     while not _tool_spinner_stop.is_set():
@@ -231,10 +247,11 @@ def _run_tool_spinner():
         i += 1
         _tool_spinner_stop.wait(0.1)
 
+# 启动工具加载动画
 def _start_tool_spinner():
     global _tool_spinner_thread
     if _tool_spinner_thread and _tool_spinner_thread.is_alive():
-        return  # already running
+        return
     import random
     with _spinner_lock:
         global _spinner_phrase
@@ -243,13 +260,15 @@ def _start_tool_spinner():
     _tool_spinner_thread = threading.Thread(target=_run_tool_spinner, daemon=True)
     _tool_spinner_thread.start()
 
+# 切换加载动画文案（不停止动画）
 def _change_spinner_phrase():
-    """Change the spinner phrase without stopping it."""
+    """不停止动画的情况下切换加载文案。"""
     import random
     with _spinner_lock:
         global _spinner_phrase
         _spinner_phrase = random.choice(_TOOL_SPINNER_PHRASES)
 
+# 停止工具加载动画
 def _stop_tool_spinner():
     global _tool_spinner_thread
     if not _tool_spinner_thread:
@@ -257,24 +276,26 @@ def _stop_tool_spinner():
     _tool_spinner_stop.set()
     _tool_spinner_thread.join(timeout=1)
     _tool_spinner_thread = None
-    # Clear the spinner on the same line
+    # 清空当前行的动画
     sys.stdout.write(f"\r{' ' * 50}\r")
     sys.stdout.flush()
 
+# 打印工具调用开始信息
 def print_tool_start(name: str, inputs: dict, verbose: bool):
-    """Show tool invocation."""
+    """显示工具调用信息。"""
     desc = _tool_desc(name, inputs)
     print(clr(f"  ⚙  {desc}", "dim", "cyan"), flush=True)
     if verbose:
-        print(clr(f"     inputs: {json.dumps(inputs, ensure_ascii=False)[:200]}", "dim"))
+        print(clr(f"     输入参数: {json.dumps(inputs, ensure_ascii=False)[:200]}", "dim"))
 
+# 打印工具调用结束信息
 def print_tool_end(name: str, result: str, verbose: bool):
     lines = result.count("\n") + 1
     size = len(result)
-    summary = f"→ {lines} lines ({size} chars)"
+    summary = f"→ {lines} 行 ({size} 字符)"
     if not result.startswith("Error") and not result.startswith("Denied"):
         print(clr(f"  ✓ {summary}", "dim", "green"), flush=True)
-        # Render diff for Edit/Write results
+        # 为编辑/写入结果渲染差异
         if name in ("Edit", "Write") and _has_diff(result):
             parts = result.split("\n\n", 1)
             if len(parts) == 2:
@@ -286,15 +307,16 @@ def print_tool_end(name: str, result: str, verbose: bool):
         preview = result[:500] + ("…" if len(result) > 500 else "")
         print(clr(f"     {preview.replace(chr(10), chr(10)+'     ')}", "dim"))
 
+# 生成工具调用描述
 def _tool_desc(name: str, inputs: dict) -> str:
-    if name == "Read":   return f"Read({inputs.get('file_path','')})"
-    if name == "Write":  return f"Write({inputs.get('file_path','')})"
-    if name == "Edit":   return f"Edit({inputs.get('file_path','')})"
-    if name == "Bash":   return f"Bash({inputs.get('command','')[:80]})"
-    if name == "Glob":   return f"Glob({inputs.get('pattern','')})"
-    if name == "Grep":   return f"Grep({inputs.get('pattern','')})"
-    if name == "WebFetch":    return f"WebFetch({inputs.get('url','')[:60]})"
-    if name == "WebSearch":   return f"WebSearch({inputs.get('query','')})"
+    if name == "Read":   return f"读取({inputs.get('file_path','')})"
+    if name == "Write":  return f"写入({inputs.get('file_path','')})"
+    if name == "Edit":   return f"编辑({inputs.get('file_path','')})"
+    if name == "Bash":   return f"执行命令({inputs.get('command','')[:80]})"
+    if name == "Glob":   return f"文件匹配({inputs.get('pattern','')})"
+    if name == "Grep":   return f"文本搜索({inputs.get('pattern','')})"
+    if name == "WebFetch":    return f"网页获取({inputs.get('url','')[:60]})"
+    if name == "WebSearch":   return f"网页搜索({inputs.get('query','')})"
     if name == "Agent":
         atype = inputs.get("subagent_type", "")
         aname = inputs.get("name", "")
@@ -302,60 +324,59 @@ def _tool_desc(name: str, inputs: dict) -> str:
         bg    = not inputs.get("wait", True)
         parts = []
         if atype:  parts.append(atype)
-        if aname:  parts.append(f"name={aname}")
-        if iso:    parts.append(f"isolation={iso}")
-        if bg:     parts.append("background")
+        if aname:  parts.append(f"名称={aname}")
+        if iso:    parts.append(f"隔离={iso}")
+        if bg:     parts.append("后台")
         suffix = f"({', '.join(parts)})" if parts else ""
         prompt_short = inputs.get("prompt", "")[:60]
-        return f"Agent{suffix}: {prompt_short}"
+        return f"代理{suffix}: {prompt_short}"
     if name == "SendMessage":
-        return f"SendMessage(to={inputs.get('to','')}: {inputs.get('message','')[:50]})"
-    if name == "CheckAgentResult": return f"CheckAgentResult({inputs.get('task_id','')})"
-    if name == "ListAgentTasks":   return "ListAgentTasks()"
-    if name == "ListAgentTypes":   return "ListAgentTypes()"
+        return f"发送消息(接收方={inputs.get('to','')}: {inputs.get('message','')[:50]})"
+    if name == "CheckAgentResult": return f"检查代理结果({inputs.get('task_id','')})"
+    if name == "ListAgentTasks":   return "列出代理任务()"
+    if name == "ListAgentTypes":   return "列出代理类型()"
     return f"{name}({list(inputs.values())[:1]})"
 
 
-# ── Permission prompt ──────────────────────────────────────────────────────
-
+# 交互式权限确认
 def ask_permission_interactive(desc: str, config: dict) -> bool:
-    text = ask_input_interactive(f"  Allow: {desc}  [y/N/a(ccept-all)] ", config).strip().lower()
+    text = ask_input_interactive(f"  允许: {desc}  [y/N/a(全部允许)] ", config).strip().lower()
 
     if text == "a" or text == "accept all" or text == "accept-all":
         config["permission_mode"] = "accept-all"
-        ok("  Permission mode set to accept-all for this session.")
+        ok("  本次会话权限模式已设为全部允许。")
         return True
     
     return text in ("y", "yes")
 
 
-# ── Slash commands ─────────────────────────────────────────────────────────
-
+# 斜杠命令实现
 import time
 import traceback
 
+# 显示帮助
 def cmd_help(_args: str, _state, config) -> bool:
     print(__doc__)
     return True
 
+# 管理模型
 def cmd_model(args: str, _state, config) -> bool:
     from providers import PROVIDERS, detect_provider
     if not args:
         model = config["model"]
         pname = detect_provider(model)
-        info(f"Current model:    {model}  (provider: {pname})")
-        info("\nAvailable models by provider:")
+        info(f"当前模型:    {model}  (服务提供商: {pname})")
+        info("\n各提供商可用模型:")
         for pn, pdata in PROVIDERS.items():
             ms = pdata.get("models", [])
             if ms:
                 info(f"  {pn:12s}  " + ", ".join(ms[:4]) + ("..." if len(ms) > 4 else ""))
-        info("\nFormat: 'provider/model' or just model name (auto-detected)")
-        info("  e.g. /model gpt-4o")
-        info("  e.g. /model ollama/qwen2.5-coder")
-        info("  e.g. /model kimi:moonshot-v1-32k")
+        info("\n格式: '提供商/模型' 或直接输入模型名(自动检测)")
+        info("  例如: /model gpt-4o")
+        info("  例如: /model ollama/qwen2.5-coder")
+        info("  例如: /model kimi:moonshot-v1-32k")
     else:
-        # Accept both "ollama/model" and "ollama:model" syntax
-        # Only treat ':' as provider separator if left side is a known provider
+        # 兼容两种语法格式
         m = args.strip()
         if "/" not in m and ":" in m:
             left, right = m.split(":", 1)
@@ -363,39 +384,43 @@ def cmd_model(args: str, _state, config) -> bool:
                 m = f"{left}/{right}"
         config["model"] = m
         pname = detect_provider(m)
-        ok(f"Model set to {m}  (provider: {pname})")
+        ok(f"模型已设置为 {m}  (服务提供商: {pname})")
         from config import save_config
         save_config(config)
     return True
 
+# 清空对话
 def cmd_clear(_args: str, state, config) -> bool:
     state.messages.clear()
     state.turn_count = 0
-    ok("Conversation cleared.")
+    ok("对话已清空。")
     return True
 
+# 管理配置
 def cmd_config(args: str, _state, config) -> bool:
     from config import save_config
     if not args:
+        # 隐藏 API 密钥后展示配置
         display = {k: v for k, v in config.items() if k != "api_key"}
         print(json.dumps(display, indent=2))
     elif "=" in args:
         key, _, val = args.partition("=")
         key, val = key.strip(), val.strip()
-        # Type coercion
+        # 类型自动转换
         if val.lower() in ("true", "false"):
             val = val.lower() == "true"
         elif val.isdigit():
             val = int(val)
         config[key] = val
         save_config(config)
-        ok(f"Set {key} = {val}")
+        ok(f"已设置 {key} = {val}")
     else:
         k = args.strip()
-        v = config.get(k, "(not set)")
+        v = config.get(k, "(未设置)")
         info(f"{k} = {v}")
     return True
 
+# 保存会话
 def cmd_save(args: str, state, config) -> bool:
     from config import SESSIONS_DIR
     import uuid
@@ -405,11 +430,12 @@ def cmd_save(args: str, state, config) -> bool:
     path  = Path(fname) if "/" in fname else SESSIONS_DIR / fname
     data  = _build_session_data(state, session_id=sid)
     path.write_text(json.dumps(data, indent=2, default=str))
-    ok(f"Session saved → {path}  (id: {sid})"  )
+    ok(f"会话已保存 → {path}  (ID: {sid})"  )
     return True
 
+# 退出时自动保存最新会话
 def save_latest(args: str, state, config=None) -> bool:
-    """Save session on exit: session_latest.json + daily/ copy + append to history.json."""
+    """退出时保存会话：保存最新会话+每日备份+追加到历史记录。"""
     from config import MR_SESSION_DIR, DAILY_DIR, SESSION_HIST_FILE
     if not state.messages:
         return True
@@ -426,23 +452,23 @@ def save_latest(args: str, state, config=None) -> bool:
     data = _build_session_data(state, session_id=sid)
     payload = json.dumps(data, indent=2, default=str)
 
-    # 1. session_latest.json — always overwrite for quick /resume
+    # 1. 保存最新会话文件，用于快速恢复
     MR_SESSION_DIR.mkdir(parents=True, exist_ok=True)
     latest_path = MR_SESSION_DIR / "session_latest.json"
     latest_path.write_text(payload)
 
-    # 2. daily/YYYY-MM-DD/session_HHMMSS_sid.json
+    # 2. 每日会话备份
     day_dir = DAILY_DIR / date_str
     day_dir.mkdir(parents=True, exist_ok=True)
     daily_path = day_dir / f"session_{ts}_{sid}.json"
     daily_path.write_text(payload)
 
-    # Prune daily folder: keep only the latest `daily_limit` files
+    # 清理每日文件夹：仅保留最新N个文件
     daily_files = sorted(day_dir.glob("session_*.json"))
     for old in daily_files[:-daily_limit]:
         old.unlink(missing_ok=True)
 
-    # 3. Append to history.json (master file)
+    # 3. 追加到总历史记录
     if SESSION_HIST_FILE.exists():
         try:
             hist = json.loads(SESSION_HIST_FILE.read_text())
@@ -454,43 +480,45 @@ def save_latest(args: str, state, config=None) -> bool:
     hist["sessions"].append(data)
     hist["total_turns"] = sum(s.get("turn_count", 0) for s in hist["sessions"])
 
-    # Prune history: keep only the latest `history_limit` sessions
+    # 清理历史记录：仅保留最新N个会话
     if len(hist["sessions"]) > history_limit:
         hist["sessions"] = hist["sessions"][-history_limit:]
 
     SESSION_HIST_FILE.write_text(json.dumps(hist, indent=2, default=str))
 
-    ok(f"Session saved → {latest_path}")
-    ok(f"             → {daily_path}  (id: {sid})")
-    ok(f"             → {SESSION_HIST_FILE}  ({len(hist['sessions'])} sessions / {hist['total_turns']} total turns)")
+    ok(f"会话已保存 → {latest_path}")
+    ok(f"             → {daily_path}  (ID: {sid})")
+    ok(f"             → {SESSION_HIST_FILE}  ({len(hist['sessions'])} 个会话 / {hist['total_turns']} 总轮次)")
     return True
+
+# 加载会话
 def cmd_load(args: str, state, config) -> bool:
     from config import SESSIONS_DIR, MR_SESSION_DIR, DAILY_DIR
 
     path = None
     if not args.strip():
-        # Collect sessions from daily/ folders, newest first
+        # 按时间倒序收集所有会话
         sessions: list[Path] = []
         if DAILY_DIR.exists():
             for day_dir in sorted(DAILY_DIR.iterdir(), reverse=True):
                 if day_dir.is_dir():
                     sessions.extend(sorted(day_dir.glob("session_*.json"), reverse=True))
-        # Fall back to legacy mr_sessions/ if daily/ is empty
+        # 兼容旧版会话目录
         if not sessions and MR_SESSION_DIR.exists():
             sessions = [s for s in sorted(MR_SESSION_DIR.glob("*.json"), reverse=True)
                         if s.name != "session_latest.json"]
-        # Also include manually /save'd sessions from SESSIONS_DIR root
+        # 添加手动保存的会话
         sessions.extend(sorted(SESSIONS_DIR.glob("session_*.json"), reverse=True))
 
         if not sessions:
-            info("No saved sessions found.")
+            info("未找到保存的会话。")
             return True
 
-        print(clr("  Select a session to load:", "cyan", "bold"))
-        menu_buf = clr('  Select a session to load:', 'cyan', 'bold')
+        print(clr("  选择要加载的会话:", "cyan", "bold"))
+        menu_buf = clr('  选择要加载的会话:', 'cyan', 'bold')
         prev_date = None
         for i, s in enumerate(sessions):
-            # Group by date header
+            # 按日期分组显示
             date_label = s.parent.name if s.parent.name != "mr_sessions" else ""
             if date_label and date_label != prev_date:
                 print(clr(f"\n  ── {date_label} ──", "dim"))
@@ -500,16 +528,16 @@ def cmd_load(args: str, state, config) -> bool:
             label = s.name
             try:
                 meta     = json.loads(s.read_text())
-                saved_at = meta.get("saved_at", "")[-8:]   # HH:MM:SS
+                saved_at = meta.get("saved_at", "")[-8:]
                 sid      = meta.get("session_id", "")
                 turns    = meta.get("turn_count", "?")
-                label    = f"{saved_at}  id:{sid}  turns:{turns}  {s.name}"
+                label    = f"{saved_at}  ID:{sid}  轮次:{turns}  {s.name}"
             except Exception:
                 pass
             print(clr(f"  [{i+1:2d}] ", "yellow") + label)
             menu_buf += "\n" + clr(f"  [{i+1:2d}] ", "yellow") + label
 
-        # Show history.json option at the bottom if it exists
+        # 显示历史记录选项
         from config import SESSION_HIST_FILE
         has_history = SESSION_HIST_FILE.exists()
         if has_history:
@@ -517,29 +545,29 @@ def cmd_load(args: str, state, config) -> bool:
                 hist_meta = json.loads(SESSION_HIST_FILE.read_text())
                 n_sess  = len(hist_meta.get("sessions", []))
                 n_turns = hist_meta.get("total_turns", 0)
-                print(clr(f"\n  ── Complete History ──", "dim"))
-                menu_buf += "\n" + clr(f"\n  ── Complete History ──", "dim")
-                hist_prt = clr("  [ H] ", "yellow") + f"Load ALL history  ({n_sess} sessions / {n_turns} total turns)  {SESSION_HIST_FILE}"
+                print(clr(f"\n  ── 完整历史记录 ──", "dim"))
+                menu_buf += "\n" + clr(f"\n  ── 完整历史记录 ──", "dim")
+                hist_prt = clr("  [ H] ", "yellow") + f"加载全部历史  ({n_sess} 个会话 / {n_turns} 总轮次)  {SESSION_HIST_FILE}"
                 print(hist_prt)
                 menu_buf += "\n" + hist_prt
             except Exception:
                 has_history = False
 
         print()
-        ans = ask_input_interactive(clr("  Enter number(s) (e.g. 1 or 1,2,3), H for full history, or Enter to cancel > ", "cyan"), config, menu_buf).strip().lower()
+        ans = ask_input_interactive(clr("  输入序号(例如 1 或 1,2,3)，H 加载全部历史，回车取消 > ", "cyan"), config, menu_buf).strip().lower()
 
         if not ans:
-            info("  Cancelled.")
+            info("  已取消。")
             return True
 
         if ans == "h":
             if not has_history:
-                err("history.json not found.")
+                err("未找到历史记录文件。")
                 return True
             hist_data = json.loads(SESSION_HIST_FILE.read_text())
             all_sessions = hist_data.get("sessions", [])
             if not all_sessions:
-                info("history.json is empty.")
+                info("历史记录为空。")
                 return True
             all_messages = []
             for s in all_sessions:
@@ -547,35 +575,35 @@ def cmd_load(args: str, state, config) -> bool:
             total_turns = sum(s.get("turn_count", 0) for s in all_sessions)
             est_tokens = sum(len(str(m.get("content", ""))) for m in all_messages) // 4
             print()
-            print(clr(f"  {len(all_messages)} messages / ~{est_tokens:,} tokens estimated", "dim"))
-            confirm = ask_input_interactive(clr("  Load full history into current session? [y/N] > ", "yellow"), config).strip().lower()
+            print(clr(f"  {len(all_messages)} 条消息 / 预估约 {est_tokens:,} 令牌", "dim"))
+            confirm = ask_input_interactive(clr("  将全部历史加载到当前会话？[y/N] > ", "yellow"), config).strip().lower()
             if confirm != "y":
-                info("  Cancelled.")
+                info("  已取消。")
                 return True
             state.messages = all_messages
             state.turn_count = total_turns
-            ok(f"Full history loaded from {SESSION_HIST_FILE} ({len(all_messages)} messages across {len(all_sessions)} sessions)")
+            ok(f"已从 {SESSION_HIST_FILE} 加载全部历史 ({len(all_messages)} 条消息，{len(all_sessions)} 个会话)")
             return True
 
-        # Parse comma-separated numbers (e.g. "1", "1,2,3", "1, 3")
+        # 解析逗号分隔的序号
         raw_parts = [p.strip() for p in ans.split(",")]
         indices = []
         for p in raw_parts:
             if not p.isdigit():
-                err(f"Invalid input '{p}'. Enter numbers separated by commas, or H.")
+                err(f"无效输入 '{p}'，请输入数字或 H。")
                 return True
             idx = int(p) - 1
             if idx < 0 or idx >= len(sessions):
-                err(f"Invalid selection: {p} (valid range: 1–{len(sessions)})")
+                err(f"无效选择: {p} (有效范围: 1–{len(sessions)})")
                 return True
             if idx not in indices:
                 indices.append(idx)
 
         if len(indices) == 1:
-            # Single session — load directly
+            # 加载单个会话
             path = sessions[indices[0]]
         else:
-            # Multiple sessions — merge in selected order
+            # 合并加载多个会话
             all_messages = []
             total_turns  = 0
             loaded_names = []
@@ -587,14 +615,14 @@ def cmd_load(args: str, state, config) -> bool:
                 loaded_names.append(s_path.name)
             est_tokens = sum(len(str(m.get("content", ""))) for m in all_messages) // 4
             print()
-            print(clr(f"  {len(loaded_names)} sessions / {len(all_messages)} messages / ~{est_tokens:,} tokens estimated", "dim"))
-            confirm = ask_input_interactive(clr("  Merge and load? [y/N] > ", "yellow"), config).strip().lower()
+            print(clr(f"  {len(loaded_names)} 个会话 / {len(all_messages)} 条消息 / 预估约 {est_tokens:,} 令牌", "dim"))
+            confirm = ask_input_interactive(clr("  合并并加载？[y/N] > ", "yellow"), config).strip().lower()
             if confirm != "y":
-                info("  Cancelled.")
+                info("  已取消。")
                 return True
             state.messages = all_messages
             state.turn_count = total_turns
-            ok(f"Loaded {len(loaded_names)} sessions ({len(all_messages)} messages): {', '.join(loaded_names)}")
+            ok(f"已加载 {len(loaded_names)} 个会话 ({len(all_messages)} 条消息): {', '.join(loaded_names)}")
             return True
 
     if not path:
@@ -608,7 +636,7 @@ def cmd_load(args: str, state, config) -> bool:
                     path = alt
                     break
         if not path.exists():
-            err(f"File not found: {path}")
+            err(f"文件不存在: {path}")
             return True
         
     data = json.loads(path.read_text())
@@ -616,23 +644,24 @@ def cmd_load(args: str, state, config) -> bool:
     state.turn_count = data.get("turn_count", 0)
     state.total_input_tokens = data.get("total_input_tokens", 0)
     state.total_output_tokens = data.get("total_output_tokens", 0)
-    ok(f"Session loaded from {path} ({len(state.messages)} messages)")
+    ok(f"已从 {path} 加载会话 ({len(state.messages)} 条消息)")
     return True
 
+# 恢复最近会话
 def cmd_resume(args: str, state, config) -> bool:
     from config import MR_SESSION_DIR
 
     if not args.strip():
         path = MR_SESSION_DIR / "session_latest.json"
         if not path.exists():
-            info("No auto-saved sessions found.")
+            info("未找到自动保存的会话。")
             return True
     else:
         fname = args.strip()
         path = Path(fname) if "/" in fname else MR_SESSION_DIR / fname
 
     if not path.exists():
-        err(f"File not found: {path}")
+        err(f"文件不存在: {path}")
         return True
 
     data = json.loads(path.read_text())
@@ -640,12 +669,13 @@ def cmd_resume(args: str, state, config) -> bool:
     state.turn_count = data.get("turn_count", 0)
     state.total_input_tokens = data.get("total_input_tokens", 0)
     state.total_output_tokens = data.get("total_output_tokens", 0)
-    ok(f"Session loaded from {path} ({len(state.messages)} messages)")
+    ok(f"已从 {path} 加载会话 ({len(state.messages)} 条消息)")
     return True
 
+# 显示对话历史
 def cmd_history(_args: str, state, config) -> bool:
     if not state.messages:
-        info("(empty conversation)")
+        info("(对话为空)")
         return True
     for i, m in enumerate(state.messages):
         role = clr(m["role"].upper(), "bold",
@@ -664,69 +694,74 @@ def cmd_history(_args: str, state, config) -> bool:
                     print(f"[{i}] {role}: {text[:200]}")
                 elif btype == "tool_use":
                     name = block.get("name", "") if isinstance(block, dict) else block.name
-                    print(f"[{i}] {role}: [tool_use: {name}]")
+                    print(f"[{i}] {role}: [工具调用: {name}]")
                 elif btype == "tool_result":
                     cval = block.get("content", "") if isinstance(block, dict) else block.content
-                    print(f"[{i}] {role}: [tool_result: {str(cval)[:100]}]")
+                    print(f"[{i}] {role}: [工具结果: {str(cval)[:100]}]")
     return True
 
+# 显示上下文使用情况
 def cmd_context(_args: str, state, config) -> bool:
     import anthropic
-    # Rough token estimate: 4 chars ≈ 1 token
+    # 粗略令牌估算：4字符≈1令牌
     msg_chars = sum(
         len(str(m.get("content", ""))) for m in state.messages
     )
     est_tokens = msg_chars // 4
-    info(f"Messages:         {len(state.messages)}")
-    info(f"Estimated tokens: ~{est_tokens:,}")
-    info(f"Model:            {config['model']}")
-    info(f"Max tokens:       {config['max_tokens']:,}")
+    info(f"消息数:         {len(state.messages)}")
+    info(f"预估令牌数: ~{est_tokens:,}")
+    info(f"模型:            {config['model']}")
+    info(f"最大令牌数:       {config['max_tokens']:,}")
     return True
 
+# 显示费用估算
 def cmd_cost(_args: str, state, config) -> bool:
     from config import calc_cost
     cost = calc_cost(config["model"],
                      state.total_input_tokens,
                      state.total_output_tokens)
-    info(f"Input tokens:  {state.total_input_tokens:,}")
-    info(f"Output tokens: {state.total_output_tokens:,}")
-    info(f"Est. cost:     ${cost:.4f} USD")
+    info(f"输入令牌:  {state.total_input_tokens:,}")
+    info(f"输出令牌: {state.total_output_tokens:,}")
+    info(f"预估费用:     ${cost:.4f} 美元")
     return True
 
+# 切换详细模式
 def cmd_verbose(_args: str, _state, config) -> bool:
     from config import save_config
     config["verbose"] = not config.get("verbose", False)
-    state_str = "ON" if config["verbose"] else "OFF"
-    ok(f"Verbose mode: {state_str}")
+    state_str = "开启" if config["verbose"] else "关闭"
+    ok(f"详细模式: {state_str}")
     save_config(config)
     return True
 
+# 切换扩展思考模式
 def cmd_thinking(_args: str, _state, config) -> bool:
     from config import save_config
     config["thinking"] = not config.get("thinking", False)
-    state_str = "ON" if config["thinking"] else "OFF"
-    ok(f"Extended thinking: {state_str}")
+    state_str = "开启" if config["thinking"] else "关闭"
+    ok(f"扩展思考模式: {state_str}")
     save_config(config)
     return True
 
+# 管理权限模式
 def cmd_permissions(args: str, _state, config) -> bool:
     from config import save_config
     modes = ["auto", "accept-all", "manual"]
     mode_desc = {
-        "auto":       "Prompt for each tool call (default)",
-        "accept-all": "Allow all tool calls silently",
-        "manual":     "Prompt for each tool call (strict)",
+        "auto":       "每次工具调用都询问(默认)",
+        "accept-all": "静默允许所有工具调用",
+        "manual":     "每次工具调用都询问(严格模式)",
     }
     if not args.strip():
         current = config.get("permission_mode", "auto")
-        menu_buf = clr("\n  ── Permission Mode ──", "dim")
+        menu_buf = clr("\n  ── 权限模式 ──", "dim")
         for i, m in enumerate(modes):
             marker = clr("●", "green") if m == current else clr("○", "dim")
             menu_buf += f"\n  {marker} {clr(f'[{i+1}]', 'yellow')} {clr(m, 'cyan')}  {clr(mode_desc[m], 'dim')}"
         print(menu_buf)
         print()
         try:
-            ans = ask_input_interactive(clr("  Select a mode number or Enter to cancel > ", "cyan"), config, menu_buf).strip()
+            ans = ask_input_interactive(clr("  选择模式序号或回车取消 > ", "cyan"), config, menu_buf).strip()
         except (KeyboardInterrupt, EOFError):
             print()
             return True
@@ -736,33 +771,35 @@ def cmd_permissions(args: str, _state, config) -> bool:
             m = modes[int(ans) - 1]
             config["permission_mode"] = m
             save_config(config)
-            ok(f"Permission mode set to: {m}")
+            ok(f"权限模式已设置为: {m}")
         else:
-            err(f"Invalid selection.")
+            err(f"无效选择。")
     else:
         m = args.strip()
         if m not in modes:
-            err(f"Unknown mode: {m}. Choose: {', '.join(modes)}")
+            err(f"未知模式: {m}，可选: {', '.join(modes)}")
         else:
             config["permission_mode"] = m
             save_config(config)
-            ok(f"Permission mode set to: {m}")
+            ok(f"权限模式已设置为: {m}")
     return True
 
+# 管理工作目录
 def cmd_cwd(args: str, _state, config) -> bool:
     if not args.strip():
-        info(f"Working directory: {os.getcwd()}")
+        info(f"当前工作目录: {os.getcwd()}")
     else:
         p = args.strip()
         try:
             os.chdir(p)
-            ok(f"Changed directory to: {os.getcwd()}")
+            ok(f"已切换目录至: {os.getcwd()}")
         except Exception as e:
             err(str(e))
     return True
 
+# 构建会话数据结构
 def _build_session_data(state, session_id: str | None = None) -> dict:
-    """Serialize current conversation state to a JSON-serializable dict."""
+    """将当前对话状态序列化为可 JSON 存储的字典。"""
     import uuid
     return {
         "session_id": session_id or uuid.uuid4().hex[:8],
@@ -781,14 +818,16 @@ def _build_session_data(state, session_id: str | None = None) -> dict:
     }
 
 
+# 退出程序
 def cmd_exit(_args: str, _state, config) -> bool:
     if sys.stdin.isatty() and sys.platform != "win32":
-        sys.stdout.write("\x1b[?2004l")  # disable bracketed paste mode
+        sys.stdout.write("\x1b[?2004l")  # 关闭括号粘贴模式
         sys.stdout.flush()
-    ok("Goodbye!")
+    ok("再见！")
     save_latest("", _state, config)
     sys.exit(0)
 
+# 管理记忆功能
 def cmd_memory(args: str, _state, config) -> bool:
     from memory import search_memory, load_index
     from memory.scan import scan_all_memories, memory_freshness_text
@@ -798,50 +837,52 @@ def cmd_memory(args: str, _state, config) -> bool:
     if stripped:
         results = search_memory(stripped)
         if not results:
-            info(f"No memories matching '{stripped}'")
+            info(f"未找到匹配 '{stripped}' 的记忆")
             return True
-        info(f"  {len(results)} result(s) for '{stripped}':")
+        info(f"  找到 {len(results)} 条结果匹配 '{stripped}':")
         for m in results:
             info(f"  [{m.type:9s}|{m.scope:7s}] {m.name}: {m.description}")
             info(f"    {m.content[:120]}{'...' if len(m.content) > 120 else ''}")
         return True
 
-    # Show manifest with age/freshness
+    # 显示记忆清单和时效性
     headers = scan_all_memories()
     if not headers:
-        info("No memories stored. The model saves memories via MemorySave.")
+        info("未存储任何记忆，模型将通过 MemorySave 保存记忆。")
         return True
-    info(f"  {len(headers)} memory/memories (newest first):")
+    info(f"  共 {len(headers)} 条记忆(最新优先):")
     for h in headers:
-        fresh_warn = "  ⚠ stale" if memory_freshness_text(h.mtime_s) else ""
+        fresh_warn = "  ⚠ 已过期" if memory_freshness_text(h.mtime_s) else ""
         tag = f"[{h.type or '?':9s}|{h.scope:7s}]"
         info(f"  {tag} {h.filename}{fresh_warn}")
         if h.description:
             info(f"    {h.description}")
     return True
 
+# 显示代理任务
 def cmd_agents(_args: str, _state, config) -> bool:
     try:
         from multi_agent.tools import get_agent_manager
         mgr = get_agent_manager()
         tasks = mgr.list_tasks()
         if not tasks:
-            info("No sub-agent tasks.")
+            info("无子代理任务。")
             return True
-        info(f"  {len(tasks)} sub-agent task(s):")
+        info(f"  {len(tasks)} 个子代理任务:")
         for t in tasks:
             preview = t.prompt[:50] + ("..." if len(t.prompt) > 50 else "")
-            wt_info = f"  branch:{t.worktree_branch}" if t.worktree_branch else ""
-            info(f"  {t.id} [{t.status:9s}] name={t.name}{wt_info}  {preview}")
+            wt_info = f"  分支:{t.worktree_branch}" if t.worktree_branch else ""
+            info(f"  {t.id} [{t.status:9s}] 名称={t.name}{wt_info}  {preview}")
     except Exception:
-        info("Sub-agent system not initialized.")
+        info("子代理系统未初始化。")
     return True
 
 
+# 打印后台任务通知
 def _print_background_notifications():
-    """Print notifications for newly completed background agent tasks.
+    """打印后台完成的代理任务通知。
 
-    Called before each user prompt so the user sees results without polling.
+    在每次用户输入前调用，无需轮询即可查看结果。
     """
     try:
         from multi_agent.tools import get_agent_manager
@@ -860,9 +901,9 @@ def _print_background_notifications():
             _print_background_notifications._seen.add(task.id)
             icon = "✓" if task.status == "completed" else "✗"
             color = "green" if task.status == "completed" else "red"
-            branch_info = f" [branch: {task.worktree_branch}]" if task.worktree_branch else ""
+            branch_info = f" [分支: {task.worktree_branch}]" if task.worktree_branch else ""
             print(clr(
-                f"\n  {icon} Background agent '{task.name}' {task.status}{branch_info}",
+                f"\n  {icon} 后台代理 '{task.name}' {task.status}{branch_info}",
                 color, "bold"
             ))
             if task.result:
@@ -870,30 +911,32 @@ def _print_background_notifications():
                 print(clr(f"    {preview}", "dim"))
             print()
 
+# 列出可用技能
 def cmd_skills(_args: str, _state, config) -> bool:
     from skill import load_skills
     skills = load_skills()
     if not skills:
-        info("No skills found.")
+        info("未找到任何技能。")
         return True
-    info(f"Available skills ({len(skills)}):")
+    info(f"可用技能({len(skills)}):")
     for s in skills:
         triggers = ", ".join(s.triggers)
         source_label = f"[{s.source}]" if s.source != "builtin" else ""
-        hint = f"  args: {s.argument_hint}" if s.argument_hint else ""
+        hint = f"  参数: {s.argument_hint}" if s.argument_hint else ""
         print(f"  {clr(s.name, 'cyan'):24s} {s.description}  {clr(triggers, 'dim')}{hint} {clr(source_label, 'yellow')}")
         if s.when_to_use:
             print(f"    {clr(s.when_to_use[:80], 'dim')}")
     return True
 
+# 管理 MCP 服务器
 def cmd_mcp(args: str, _state, config) -> bool:
-    """Show MCP server status, or manage servers.
+    """显示 MCP 服务器状态或管理服务器。
 
-    /mcp               — list all configured servers and their tools
-    /mcp reload        — reconnect all servers and refresh tools
-    /mcp reload <name> — reconnect a single server
-    /mcp add <name> <command> [args...] — add a stdio server to user config
-    /mcp remove <name> — remove a server from user config
+    /mcp               — 列出所有配置的服务器及其工具
+    /mcp reload        — 重新连接所有服务器并刷新工具
+    /mcp reload <名称> — 重新连接单个服务器
+    /mcp add <名称> <命令> [参数...] — 添加标准输入输出服务器到用户配置
+    /mcp remove <名称> — 从用户配置中移除服务器
     """
     from mcp.client import get_mcp_manager
     from mcp.config import (load_mcp_configs, add_server_to_user_config,
@@ -908,21 +951,21 @@ def cmd_mcp(args: str, _state, config) -> bool:
         if target:
             err = refresh_server(target)
             if err:
-                err(f"Failed to reload '{target}': {err}")
+                err(f"重新加载 '{target}' 失败: {err}")
             else:
-                ok(f"Reloaded MCP server: {target}")
+                ok(f"已重新加载 MCP 服务器: {target}")
         else:
             errors = reload_mcp()
             for name, e in errors.items():
                 if e:
                     print(f"  {clr('✗', 'red')} {name}: {e}")
                 else:
-                    print(f"  {clr('✓', 'green')} {name}: connected")
+                    print(f"  {clr('✓', 'green')} {name}: 已连接")
         return True
 
     if subcmd == "add":
         if len(parts) < 3:
-            err("Usage: /mcp add <name> <command> [arg1 arg2 ...]")
+            err("用法: /mcp add <名称> <命令> [参数1 参数2...]")
             return True
         name = parts[1]
         command = parts[2]
@@ -931,40 +974,40 @@ def cmd_mcp(args: str, _state, config) -> bool:
         if cmd_args:
             raw["args"] = cmd_args
         add_server_to_user_config(name, raw)
-        ok(f"Added MCP server '{name}' → restart or /mcp reload to connect")
+        ok(f"已添加 MCP 服务器 '{name}'，重启或执行 /mcp reload 连接")
         return True
 
     if subcmd == "remove":
         if len(parts) < 2:
-            err("Usage: /mcp remove <name>")
+            err("用法: /mcp remove <名称>")
             return True
         name = parts[1]
         removed = remove_server_from_user_config(name)
         if removed:
-            ok(f"Removed MCP server '{name}' from user config")
+            ok(f"已从用户配置移除 MCP 服务器 '{name}'")
         else:
-            err(f"Server '{name}' not found in user config")
+            err(f"用户配置中未找到服务器 '{name}'")
         return True
 
-    # Default: list servers
+    # 默认：列出服务器
     mgr = get_mcp_manager()
     servers = mgr.list_servers()
 
     config_files = list_config_files()
     if config_files:
-        info(f"Config files: {', '.join(str(f) for f in config_files)}")
+        info(f"配置文件: {', '.join(str(f) for f in config_files)}")
 
     if not servers:
         configs = load_mcp_configs()
         if not configs:
-            info("No MCP servers configured.")
-            info("Add servers in ~/.pycc/mcp.json or .mcp.json")
-            info("Example: /mcp add my-git uvx mcp-server-git")
+            info("未配置任何 MCP 服务器。")
+            info("可在 ~/.pycc/mcp.json 或 .mcp.json 中添加服务器")
+            info("示例: /mcp add my-git uvx mcp-server-git")
         else:
-            info("MCP servers configured but not yet connected. Run /mcp reload")
+            info("已配置 MCP 服务器但未连接，执行 /mcp reload")
         return True
 
-    info(f"MCP servers ({len(servers)}):")
+    info(f"MCP 服务器({len(servers)}):")
     total_tools = 0
     for client in servers:
         status_color = {
@@ -979,21 +1022,22 @@ def cmd_mcp(args: str, _state, config) -> bool:
             total_tools += 1
 
     if total_tools:
-        info(f"Total: {total_tools} MCP tool(s) available to Claude")
+        info(f"总计: {total_tools} 个 MCP 工具可供 Claude 使用")
     return True
 
 
+# 管理任务
 def cmd_tasks(args: str, _state, config) -> bool:
-    """Show and manage tasks.
+    """查看和管理任务。
 
-    /tasks                  — list all tasks
-    /tasks create <subject> — quick-create a task
-    /tasks done <id>        — mark task completed
-    /tasks start <id>       — mark task in_progress
-    /tasks cancel <id>      — mark task cancelled
-    /tasks delete <id>      — delete a task
-    /tasks get <id>         — show full task details
-    /tasks clear            — delete all tasks
+    /tasks                  — 列出所有任务
+    /tasks create <主题> — 快速创建任务
+    /tasks done <ID>        — 标记任务为已完成
+    /tasks start <ID>       — 标记任务为进行中
+    /tasks cancel <ID>      — 标记任务为已取消
+    /tasks delete <ID>      — 删除任务
+    /tasks get <ID>         — 显示任务完整详情
+    /tasks clear            — 删除所有任务
     """
     from task import list_tasks, get_task, create_task, update_task, delete_task, clear_all_tasks
     from task.types import TaskStatus
@@ -1011,11 +1055,11 @@ def cmd_tasks(args: str, _state, config) -> bool:
     if not subcmd:
         tasks = list_tasks()
         if not tasks:
-            info("No tasks. Use TaskCreate tool or /tasks create <subject>.")
+            info("暂无任务，可使用 TaskCreate 工具或 /tasks create <主题> 创建。")
             return True
         total = len(tasks)
         done  = sum(1 for t in tasks if t.status == TaskStatus.COMPLETED)
-        info(f"Tasks ({done}/{total} completed):")
+        info(f"任务({done}/{total} 已完成):")
         for t in tasks:
             owner_str = f" {clr(f'({t.owner})', 'dim')}" if t.owner else ""
             status_color = {
@@ -1030,193 +1074,191 @@ def cmd_tasks(args: str, _state, config) -> bool:
 
     if subcmd == "create":
         if not rest:
-            err("Usage: /tasks create <subject>")
+            err("用法: /tasks create <主题>")
             return True
-        t = create_task(rest, description="(created via REPL)")
-        ok(f"Task #{t.id} created: {t.subject}")
+        t = create_task(rest, description="(通过交互模式创建)")
+        ok(f"任务 #{t.id} 已创建: {t.subject}")
         return True
 
     if subcmd in STATUS_MAP:
         new_status = STATUS_MAP[subcmd]
         if not rest:
-            err(f"Usage: /tasks {subcmd} <task_id>")
+            err(f"用法: /tasks {subcmd} <任务ID>")
             return True
         task, fields = update_task(rest, status=new_status)
         if task is None:
-            err(f"Task #{rest} not found.")
+            err(f"未找到任务 #{rest}。")
         else:
-            ok(f"Task #{task.id} → {new_status}: {task.subject}")
+            ok(f"任务 #{task.id} → {new_status}: {task.subject}")
         return True
 
     if subcmd == "delete":
         if not rest:
-            err("Usage: /tasks delete <task_id>")
+            err("用法: /tasks delete <任务ID>")
             return True
         removed = delete_task(rest)
         if removed:
-            ok(f"Task #{rest} deleted.")
+            ok(f"任务 #{rest} 已删除。")
         else:
-            err(f"Task #{rest} not found.")
+            err(f"未找到任务 #{rest}。")
         return True
 
     if subcmd == "get":
         if not rest:
-            err("Usage: /tasks get <task_id>")
+            err("用法: /tasks get <任务ID>")
             return True
         t = get_task(rest)
         if t is None:
-            err(f"Task #{rest} not found.")
+            err(f"未找到任务 #{rest}。")
             return True
         print(f"  #{t.id} [{t.status.value}] {t.subject}")
-        print(f"  Description: {t.description}")
-        if t.owner:         print(f"  Owner:       {t.owner}")
-        if t.active_form:   print(f"  Active form: {t.active_form}")
-        if t.metadata:      print(f"  Metadata:    {t.metadata}")
-        print(f"  Created: {t.created_at[:19]}  Updated: {t.updated_at[:19]}")
+        print(f"  描述: {t.description}")
+        if t.owner:         print(f"  负责人:       {t.owner}")
+        if t.active_form:   print(f"  激活表单: {t.active_form}")
+        if t.metadata:      print(f"  元数据:    {t.metadata}")
+        print(f"  创建时间: {t.created_at[:19]}  更新时间: {t.updated_at[:19]}")
         return True
 
     if subcmd == "clear":
         clear_all_tasks()
-        ok("All tasks deleted.")
+        ok("所有任务已删除。")
         return True
 
-    err(f"Unknown tasks subcommand: {subcmd}  (try /tasks or /help)")
+    err(f"未知任务子命令: {subcmd}  (尝试 /tasks 或 /help)")
     return True
 
 
-
-
-
-
+# 发送剪贴板图片
 def cmd_image(args: str, state, config) -> Union[bool, tuple]:
-    """Grab image from clipboard and send to vision model with optional prompt."""
+    """从剪贴板获取图片并发送给视觉模型，支持附加提示词。"""
     import sys as _sys
     try:
         from PIL import ImageGrab
         import io, base64
     except ImportError:
-        err("Pillow is required for /image. Install with: pip install pycc[vision]")
+        err("需要安装 Pillow 才能使用 /image，命令: pip install pycc[vision]")
         if _sys.platform == "linux":
-            err("On Linux, clipboard support also requires xclip: sudo apt install xclip")
+            err("Linux 系统还需要安装 xclip: sudo apt install xclip")
         return True
 
     img = ImageGrab.grabclipboard()
     if img is None:
         if _sys.platform == "linux":
-            err("No image found in clipboard. On Linux, xclip is required (sudo apt install xclip). "
-                "Copy an image with Flameshot, GNOME Screenshot, or: xclip -selection clipboard -t image/png -i file.png")
+            err("剪贴板中未找到图片，Linux 系统需要 xclip (sudo apt install xclip)。"
+                "使用 Flameshot、GNOME 截图工具复制图片，或执行: xclip -selection clipboard -t image/png -i 文件名.png")
         elif _sys.platform == "darwin":
-            err("No image found in clipboard. Copy an image first "
-                "(Cmd+Ctrl+Shift+4 captures a screenshot region to clipboard).")
+            err("剪贴板中未找到图片，请先复制图片"
+                "(Cmd+Ctrl+Shift+4 可将截图区域复制到剪贴板)。")
         else:
-            err("No image found in clipboard. Copy an image first "
-                "(Win+Shift+S captures a screenshot region to clipboard).")
+            err("剪贴板中未找到图片，请先复制图片"
+                "(Win+Shift+S 可将截图区域复制到剪贴板)。")
         return True
 
-    # Convert to base64 PNG
+    # 转换为 Base64 编码的 PNG
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
     size_kb = len(buf.getvalue()) / 1024
 
-    info(f"📷 Clipboard image captured ({size_kb:.0f} KB, {img.size[0]}x{img.size[1]})")
+    info(f"📷 已捕获剪贴板图片 ({size_kb:.0f} KB，{img.size[0]}x{img.size[1]})")
 
-    # Store in config for agent.py to pick up
+    # 存储到配置中供代理使用
     config["_pending_image"] = b64
 
-    prompt = args.strip() if args.strip() else "What do you see in this image? Describe it in detail."
+    prompt = args.strip() if args.strip() else "你在这张图片中看到了什么？详细描述一下。"
     return ("__image__", prompt)
 
 
-
+# 计划模式管理
 def cmd_plan(args: str, state, config) -> bool:
-    """Enter/exit plan mode or show current plan.
+    """进入/退出计划模式或查看当前计划。
 
-    /plan <description>  — enter plan mode and start planning
-    /plan                — show current plan file contents
-    /plan done           — exit plan mode, restore permissions
-    /plan status         — show plan mode status
+    /plan <描述>  — 进入计划模式并开始制定计划
+    /plan                — 显示当前计划文件内容
+    /plan done           — 退出计划模式，恢复权限
+    /plan status         — 显示计划模式状态
     """
     arg = args.strip()
 
     plan_file = config.get("_plan_file", "")
     in_plan_mode = config.get("permission_mode") == "plan"
 
-    # /plan done — exit plan mode
+    # 退出计划模式
     if arg == "done":
         if not in_plan_mode:
-            err("Not in plan mode.")
+            err("未处于计划模式。")
             return True
         prev = config.pop("_prev_permission_mode", "auto")
         config["permission_mode"] = prev
-        info(f"Exited plan mode. Permission mode restored to: {prev}")
+        info(f"已退出计划模式，权限模式恢复为: {prev}")
         if plan_file:
-            info(f"Plan saved at: {plan_file}")
-            info("You can now ask Claude to implement the plan.")
+            info(f"计划已保存至: {plan_file}")
+            info("现在可以让 Claude 执行该计划。")
         return True
 
-    # /plan status
+    # 查看计划模式状态
     if arg == "status":
         if in_plan_mode:
-            info(f"Plan mode: ACTIVE")
-            info(f"Plan file: {plan_file}")
-            info(f"Only the plan file is writable. Use /plan done to exit.")
+            info(f"计划模式: 已激活")
+            info(f"计划文件: {plan_file}")
+            info(f"仅计划文件可写入，使用 /plan done 退出。")
         else:
-            info("Plan mode: inactive")
+            info("计划模式: 未激活")
         return True
 
-    # /plan (no args) — show plan contents
+    # 无参数：显示计划内容
     if not arg:
         if not plan_file:
-            info("Not in plan mode. Use /plan <description> to start planning.")
+            info("未处于计划模式，使用 /plan <描述> 开始制定计划。")
             return True
         p = Path(plan_file)
         if p.exists() and p.stat().st_size > 0:
-            info(f"Plan file: {plan_file}")
+            info(f"计划文件: {plan_file}")
             print(p.read_text(encoding="utf-8"))
         else:
-            info(f"Plan file is empty: {plan_file}")
+            info(f"计划文件为空: {plan_file}")
         return True
 
-    # /plan <description> — enter plan mode
+    # 进入计划模式
     if in_plan_mode:
-        err("Already in plan mode. Use /plan done to exit first.")
+        err("已处于计划模式，先使用 /plan done 退出。")
         return True
 
-    # Create plan file
+    # 创建计划文件
     session_id = config.get("_session_id", "default")
     plans_dir = Path.cwd() / ".nano_claude" / "plans"
     plans_dir.mkdir(parents=True, exist_ok=True)
     plan_path = plans_dir / f"{session_id}.md"
-    plan_path.write_text(f"# Plan: {arg}\n\n", encoding="utf-8")
+    plan_path.write_text(f"# 计划: {arg}\n\n", encoding="utf-8")
 
-    # Switch to plan mode
+    # 切换到计划模式
     config["_prev_permission_mode"] = config.get("permission_mode", "auto")
     config["permission_mode"] = "plan"
     config["_plan_file"] = str(plan_path)
 
-    info("Plan mode activated (read-only except plan file).")
-    info(f"Plan file: {plan_path}")
-    info("Use /plan done to exit and start implementation.")
+    info("计划模式已激活(仅计划文件可写入)。")
+    info(f"计划文件: {plan_path}")
+    info("使用 /plan done 退出并开始执行。")
     print()
 
-    # Return sentinel to trigger run_query with the description
+    # 返回标记触发查询执行
     return ("__plan__", arg)
 
 
+# 手动压缩对话历史
 def cmd_compact(args: str, state, config) -> bool:
-    """Manually compact conversation history.
+    """手动压缩对话历史。
 
-    /compact              — compact with default summarization
-    /compact <focus>      — compact with focus instructions
+    /compact              — 使用默认摘要压缩
+    /compact <重点>      — 按指定重点压缩
     """
     from compaction import manual_compact
     focus = args.strip()
 
     if focus:
-        info(f"Compacting with focus: {focus}")
+        info(f"按重点压缩对话: {focus}")
     else:
-        info("Compacting conversation...")
+        info("正在压缩对话...")
 
     success, msg = manual_compact(state, config, focus=focus)
     if success:
@@ -1226,45 +1268,47 @@ def cmd_compact(args: str, state, config) -> bool:
     return True
 
 
+# 初始化项目说明文件
 def cmd_init(args: str, state, config) -> bool:
-    """Initialize a CLAUDE.md file in the current directory.
+    """在当前目录初始化 CLAUDE.md 文件。
 
-    /init          — create CLAUDE.md with a starter template
+    /init          — 创建带模板的 CLAUDE.md
     """
     target = Path.cwd() / "CLAUDE.md"
     if target.exists():
-        err(f"CLAUDE.md already exists at {target}")
-        info("Edit it directly or delete it first.")
+        err(f"{target} 已存在")
+        info("直接编辑或先删除该文件。")
         return True
 
     project_name = Path.cwd().name
     template = (
         f"# {project_name}\n\n"
-        "## Project Overview\n"
-        "<!-- Describe what this project does -->\n\n"
-        "## Tech Stack\n"
-        "<!-- Languages, frameworks, key dependencies -->\n\n"
-        "## Conventions\n"
-        "<!-- Coding style, naming conventions, patterns to follow -->\n\n"
-        "## Important Files\n"
-        "<!-- Key entry points, config files, etc. -->\n\n"
-        "## Testing\n"
-        "<!-- How to run tests, testing conventions -->\n\n"
+        "## 项目概述\n"
+        "<!-- 描述项目功能 -->\n\n"
+        "## 技术栈\n"
+        "<!-- 语言、框架、核心依赖 -->\n\n"
+        "## 规范\n"
+        "<!-- 编码风格、命名规范、遵循模式 -->\n\n"
+        "## 重要文件\n"
+        "<!-- 核心入口、配置文件等 -->\n\n"
+        "## 测试\n"
+        "<!-- 测试执行方式、测试规范 -->\n\n"
     )
     target.write_text(template, encoding="utf-8")
-    info(f"Created {target}")
-    info("Edit it to give Claude context about your project.")
+    info(f"已创建 {target}")
+    info("编辑该文件为 Claude 提供项目上下文。")
     return True
 
 
+# 导出对话历史
 def cmd_export(args: str, state, config) -> bool:
-    """Export conversation history to a file.
+    """导出对话历史到文件。
 
-    /export              — export as markdown to .nano_claude/exports/
-    /export <filename>   — export to a specific file (.md or .json)
+    /export              — 导出为 Markdown 到 .nano_claude/exports/
+    /export <文件名>   — 导出到指定文件(.md 或 .json)
     """
     if not state.messages:
-        err("No conversation to export.")
+        err("无对话可导出。")
         return True
 
     arg = args.strip()
@@ -1289,27 +1333,28 @@ def cmd_export(args: str, state, config) -> bool:
             role = m.get("role", "unknown")
             content = m.get("content", "")
             if isinstance(content, list):
-                content = "(structured content)"
+                content = "(结构化内容)"
             if role == "user":
-                lines.append(f"## User\n\n{content}\n")
+                lines.append(f"## 用户\n\n{content}\n")
             elif role == "assistant":
-                lines.append(f"## Assistant\n\n{content}\n")
+                lines.append(f"## 助手\n\n{content}\n")
             elif role == "tool":
                 name = m.get("name", "tool")
-                lines.append(f"### Tool: {name}\n\n```\n{content[:2000]}\n```\n")
+                lines.append(f"### 工具: {name}\n\n```\n{content[:2000]}\n```\n")
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text("\n".join(lines), encoding="utf-8")
 
-    info(f"Exported {len(state.messages)} messages to {out_path}")
+    info(f"已导出 {len(state.messages)} 条消息到 {out_path}")
     return True
 
 
+# 复制最后一条助手回复
 def cmd_copy(args: str, state, config) -> bool:
-    """Copy the last assistant response to clipboard.
+    """将最后一条助手回复复制到剪贴板。
 
-    /copy   — copy last assistant message to clipboard
+    /copy   — 复制最后一条助手消息到剪贴板
     """
-    # Find last assistant message
+    # 查找最后一条助手消息
     last_reply = None
     for m in reversed(state.messages):
         if m.get("role") == "assistant":
@@ -1319,7 +1364,7 @@ def cmd_copy(args: str, state, config) -> bool:
                 break
 
     if not last_reply:
-        err("No assistant response to copy.")
+        err("无助手回复可复制。")
         return True
 
     try:
@@ -1332,7 +1377,7 @@ def cmd_copy(args: str, state, config) -> bool:
             proc = _sp.Popen(["pbcopy"], stdin=_sp.PIPE)
             proc.communicate(last_reply.encode("utf-8"))
         else:
-            # Linux: try xclip, then xsel
+            # Linux 系统：尝试 xclip，再尝试 xsel
             for cmd in (["xclip", "-selection", "clipboard"], ["xsel", "--clipboard", "--input"]):
                 try:
                     proc = _sp.Popen(cmd, stdin=_sp.PIPE)
@@ -1341,18 +1386,19 @@ def cmd_copy(args: str, state, config) -> bool:
                 except FileNotFoundError:
                     continue
             else:
-                err("No clipboard tool found. Install xclip or xsel.")
+                err("未找到剪贴板工具，请安装 xclip 或 xsel。")
                 return True
-        info(f"Copied {len(last_reply)} chars to clipboard.")
+        info(f"已复制 {len(last_reply)} 字符到剪贴板。")
     except Exception as e:
-        err(f"Failed to copy: {e}")
+        err(f"复制失败: {e}")
     return True
 
 
+# 显示会话状态
 def cmd_status(args: str, state, config) -> bool:
-    """Show current session status.
+    """显示当前会话状态。
 
-    /status   — model, provider, permissions, session info
+    /status   — 模型、提供商、权限、会话信息
     """
     from providers import detect_provider
     from compaction import estimate_tokens, get_context_limit
@@ -1370,21 +1416,22 @@ def cmd_status(args: str, state, config) -> bool:
     ctx_pct = (est_ctx / ctx_limit * 100) if ctx_limit else 0
     plan_mode = config.get("permission_mode") == "plan"
 
-    print(f"  Version:     {VERSION}")
-    print(f"  Model:       {model} ({provider})")
-    print(f"  Permissions: {perm_mode}" + (" [PLAN MODE]" if plan_mode else ""))
-    print(f"  Session:     {session_id}")
-    print(f"  Turns:       {turn_count}")
-    print(f"  Messages:    {msg_count}")
-    print(f"  Tokens:      ~{tokens_in} in / ~{tokens_out} out")
-    print(f"  Context:     ~{est_ctx} / {ctx_limit} ({ctx_pct:.0f}%)")
+    print(f"  版本:     {VERSION}")
+    print(f"  模型:       {model} ({provider})")
+    print(f"  权限: {perm_mode}" + (" [计划模式]" if plan_mode else ""))
+    print(f"  会话:     {session_id}")
+    print(f"  轮次:       {turn_count}")
+    print(f"  消息:    {msg_count}")
+    print(f"  令牌:      ~{tokens_in} 输入 / ~{tokens_out} 输出")
+    print(f"  上下文:     ~{est_ctx} / {ctx_limit} ({ctx_pct:.0f}%)")
     return True
 
 
+# 诊断工具
 def cmd_doctor(args: str, state, config) -> bool:
-    """Diagnose installation health and connectivity.
+    """诊断安装环境和网络连接。
 
-    /doctor   — run all health checks
+    /doctor   — 运行所有健康检查
     """
     import subprocess as _sp
     import sys as _sys
@@ -1400,61 +1447,61 @@ def cmd_doctor(args: str, state, config) -> bool:
 
     def ok(msg):
         nonlocal ok_n; ok_n += 1
-        _print_safe(clr("  [PASS] ", "green") + msg)
+        _print_safe(clr("  [通过] ", "green") + msg)
 
     def warn(msg):
         nonlocal warn_n; warn_n += 1
-        _print_safe(clr("  [WARN] ", "yellow") + msg)
+        _print_safe(clr("  [警告] ", "yellow") + msg)
 
     def fail(msg):
         nonlocal fail_n; fail_n += 1
-        _print_safe(clr("  [FAIL] ", "red") + msg)
+        _print_safe(clr("  [失败] ", "red") + msg)
 
-    info("Running diagnostics...")
+    info("正在运行诊断...")
     print()
 
-    # ── 1. Python version ──
+    # 1. 检查 Python 版本
     v = _sys.version_info
     if v >= (3, 10):
         ok(f"Python {v.major}.{v.minor}.{v.micro}")
     else:
-        fail(f"Python {v.major}.{v.minor}.{v.micro} (need ≥3.10)")
+        fail(f"Python {v.major}.{v.minor}.{v.micro} (需要 ≥3.10)")
 
-    # ── 2. Git ──
+    # 2. 检查 Git
     try:
         r = _sp.run(["git", "--version"], capture_output=True, text=True, timeout=5)
         if r.returncode == 0:
             ok(f"Git: {r.stdout.strip()}")
         else:
-            fail("Git: not working")
+            fail("Git: 工作异常")
     except Exception:
-        fail("Git: not found")
+        fail("Git: 未找到")
 
     try:
         r = _sp.run(["git", "rev-parse", "--is-inside-work-tree"],
                      capture_output=True, text=True, timeout=5)
         if r.returncode == 0:
-            ok("Inside a git repository")
+            ok("位于 Git 仓库内")
         else:
-            warn("Not inside a git repository")
+            warn("未位于 Git 仓库内")
     except Exception:
-        warn("Could not check git repo status")
+        warn("无法检查 Git 仓库状态")
 
-    # ── 3. Current model + API key ──
+    # 3. 检查当前模型和 API 密钥
     model = config.get("model", "")
     provider = detect_provider(model)
     key = get_api_key(provider, config)
 
     if key:
-        ok(f"API key for {provider}: set ({key[:4]}...{key[-4:]})")
+        ok(f"{provider} 的 API 密钥: 已设置 ({key[:4]}...{key[-4:]})")
     elif provider in ("ollama", "lmstudio"):
-        ok(f"Provider {provider}: no key needed (local)")
+        ok(f"提供商 {provider}: 无需密钥(本地部署)")
     else:
-        fail(f"API key for {provider}: NOT SET")
+        fail(f"{provider} 的 API 密钥: 未设置")
 
-    # ── 4. API connectivity test ──
+    # 4. 测试 API 连接
     if key or provider in ("ollama", "lmstudio"):
-        print(f"  ... testing {provider} API connectivity...")
+        print(f"  ... 正在测试 {provider} API 连接...")
         try:
             import urllib.request, urllib.error
             prov = PROVIDERS.get(provider, {})
@@ -1476,26 +1523,26 @@ def cmd_doctor(args: str, state, config) -> bool:
                 )
                 try:
                     urllib.request.urlopen(req, timeout=10)
-                    ok(f"Anthropic API: reachable, model {model} works")
+                    ok(f"Anthropic API: 可访问，模型 {model} 正常")
                 except urllib.error.HTTPError as e:
                     if e.code == 401:
-                        fail("Anthropic API: invalid API key (401)")
+                        fail("Anthropic API: 无效的 API 密钥 (401)")
                     elif e.code == 404:
-                        fail(f"Anthropic API: model {model} not found (404)")
+                        fail(f"Anthropic API: 未找到模型 {model} (404)")
                     elif e.code == 429:
-                        warn("Anthropic API: rate limited (429) — key is valid")
+                        warn("Anthropic API: 请求频率受限 (429) — 密钥有效")
                     else:
                         warn(f"Anthropic API: HTTP {e.code}")
                 except Exception as e:
-                    fail(f"Anthropic API: connection error — {e}")
+                    fail(f"Anthropic API: 连接错误 — {e}")
 
             elif ptype == "ollama":
                 base = prov.get("base_url", "http://localhost:11434")
                 try:
                     urllib.request.urlopen(f"{base}/api/tags", timeout=5)
-                    ok(f"Ollama: reachable at {base}")
+                    ok(f"Ollama: 可访问 {base}")
                 except Exception:
-                    fail(f"Ollama: cannot reach {base} — is Ollama running?")
+                    fail(f"Ollama: 无法连接 {base} — Ollama 是否运行？")
 
             else:
                 base = prov.get("base_url", "")
@@ -1509,66 +1556,66 @@ def cmd_doctor(args: str, state, config) -> bool:
                     )
                     try:
                         urllib.request.urlopen(req, timeout=10)
-                        ok(f"{provider} API: reachable")
+                        ok(f"{provider} API: 可访问")
                     except urllib.error.HTTPError as e:
                         if e.code == 401:
-                            fail(f"{provider} API: invalid API key (401)")
+                            fail(f"{provider} API: 无效的 API 密钥 (401)")
                         elif e.code == 429:
-                            warn(f"{provider} API: rate limited (429) — key is valid")
+                            warn(f"{provider} API: 请求频率受限 (429) — 密钥有效")
                         else:
                             warn(f"{provider} API: HTTP {e.code}")
                     except Exception as e:
-                        fail(f"{provider} API: connection error — {e}")
+                        fail(f"{provider} API: 连接错误 — {e}")
                 else:
-                    warn(f"{provider}: no base_url configured")
+                    warn(f"{provider}: 未配置基础地址")
         except Exception as e:
-            warn(f"API test skipped: {e}")
+            warn(f"API 测试跳过: {e}")
 
-    # ── 5. Other configured API keys ──
+    # 5. 检查其他配置的 API 密钥
     print()
     for pname, pdata in PROVIDERS.items():
         if pname == provider:
             continue
         env_var = pdata.get("api_key_env")
         if env_var and os.environ.get(env_var, ""):
-            ok(f"{pname} key ({env_var}): set")
+            ok(f"{pname} 密钥 ({env_var}): 已设置")
 
-    # ── 6. Optional dependencies ──
+    # 6. 检查可选依赖
     print()
     for mod, desc in [
-        ("rich", "Rich (live markdown rendering)"),
-        ("PIL", "Pillow (clipboard image /image)"),
-        ("sounddevice", "sounddevice (voice recording)"),
-        ("faster_whisper", "faster-whisper (local STT)"),
+        ("rich", "Rich (实时 Markdown 渲染)"),
+        ("PIL", "Pillow (剪贴板图片 /image)"),
+        ("sounddevice", "sounddevice (语音录制)"),
+        ("faster_whisper", "faster-whisper (本地语音识别)"),
     ]:
         try:
             __import__(mod)
             ok(desc)
         except ImportError:
-            warn(f"{desc}: not installed")
+            warn(f"{desc}: 未安装")
 
-    # ── 7. CLAUDE.md ──
+    # 7. 检查项目说明文件
     print()
     claude_md = Path.cwd() / "CLAUDE.md"
     global_md = Path.home() / ".claude" / "CLAUDE.md"
     if claude_md.exists():
-        ok(f"Project CLAUDE.md: {claude_md}")
+        ok(f"项目 CLAUDE.md: {claude_md}")
     else:
-        warn("No project CLAUDE.md (run /init to create)")
+        warn("无项目 CLAUDE.md (执行 /init 创建)")
     if global_md.exists():
-        ok(f"Global CLAUDE.md: {global_md}")
+        ok(f"全局 CLAUDE.md: {global_md}")
 
-    # ── 8. Permission mode ──
+    # 8. 检查权限模式
     perm = config.get("permission_mode", "auto")
     if perm == "accept-all":
-        warn(f"Permission mode: {perm} (all operations auto-approved)")
+        warn(f"权限模式: {perm} (所有操作自动允许)")
     else:
-        ok(f"Permission mode: {perm}")
+        ok(f"权限模式: {perm}")
 
-    # ── Summary ──
+    # 诊断总结
     print()
     total = ok_n + warn_n + fail_n
-    summary = f"  {ok_n} passed, {warn_n} warnings, {fail_n} failures ({total} checks)"
+    summary = f"  {ok_n} 项通过, {warn_n} 项警告, {fail_n} 项失败 ({total} 项检查)"
     if fail_n:
         _print_safe(clr(summary, "red"))
     elif warn_n:
@@ -1578,7 +1625,7 @@ def cmd_doctor(args: str, state, config) -> bool:
 
     return True
 
-
+# 命令映射表
 COMMANDS = {
     "help":        cmd_help,
     "clear":       cmd_clear,
@@ -1613,9 +1660,9 @@ COMMANDS = {
     "resume":      cmd_resume
 }
 
-
+# 处理斜杠命令
 def handle_slash(line: str, state, config) -> Union[bool, tuple]:
-    """Handle /command [args]. Returns True if handled, tuple (skill, args) for skill match."""
+    """处理 /命令 [参数]。处理成功返回 True，技能匹配返回元组(技能,参数)。"""
     if not line.startswith("/"):
         return False
     parts = line[1:].split(None, 1)
@@ -1626,12 +1673,12 @@ def handle_slash(line: str, state, config) -> Union[bool, tuple]:
     handler = COMMANDS.get(cmd)
     if handler:
         result = handler(args, state, config)
-        # cmd_image/cmd_plan return sentinels to ask the REPL to run_query
+        # 图片/计划命令返回标记，让交互循环执行查询
         if isinstance(result, tuple) and result[0] in ("__image__", "__plan__"):
             return result
         return True
 
-    # Fall through to skill lookup
+    # 技能查找
     from skill import find_skill
     skill = find_skill(line)
     if skill:
@@ -1639,50 +1686,49 @@ def handle_slash(line: str, state, config) -> Union[bool, tuple]:
         skill_args = cmd_parts[1] if len(cmd_parts) > 1 else ""
         return (skill, skill_args)
 
-    err(f"Unknown command: /{cmd}  (type /help for commands)")
+    err(f"未知命令: /{cmd}  (输入 /help 查看命令列表)")
     return True
 
 
-# ── Input history setup ────────────────────────────────────────────────────
-
-# Descriptions and subcommands for each slash command (used by Tab completion)
+# 命令行历史设置
+# 每个斜杠命令的描述和子命令（用于 Tab 补全）
 _CMD_META: dict[str, tuple[str, list[str]]] = {
-    "help":        ("Show help",                          []),
-    "clear":       ("Clear conversation history",         []),
-    "model":       ("Show / set model",                   []),
-    "config":      ("Show / set config key=value",        []),
-    "save":        ("Save session to file",               []),
-    "load":        ("Load a saved session",               []),
-    "history":     ("Show conversation history",          []),
-    "context":     ("Show token-context usage",           []),
-    "cost":        ("Show cost estimate",                 []),
-    "verbose":     ("Toggle verbose output",              []),
-    "thinking":    ("Toggle extended thinking",           []),
-    "permissions": ("Set permission mode",                ["auto", "accept-all", "manual"]),
-    "cwd":         ("Show / change working directory",    []),
-    "skills":      ("List available skills",              []),
-    "memory":      ("Search / list memories", []),
-    "agents":      ("Show background agents",             []),
-    "mcp":         ("Manage MCP servers",                 ["reload", "add", "remove"]),
-    "tasks":       ("Manage tasks",                       ["create", "delete", "get", "clear",
+    "help":        ("显示帮助",                          []),
+    "clear":       ("清空对话历史",         []),
+    "model":       ("查看/设置模型",                   []),
+    "config":      ("查看/设置配置 key=value",        []),
+    "save":        ("保存会话到文件",               []),
+    "load":        ("加载保存的会话",               []),
+    "history":     ("显示对话历史",          []),
+    "context":     ("显示令牌上下文使用",           []),
+    "cost":        ("显示费用估算",                 []),
+    "verbose":     ("切换详细输出",              []),
+    "thinking":    ("切换扩展思考",              []),
+    "permissions": ("设置权限模式",                ["auto", "accept-all", "manual"]),
+    "cwd":         ("查看/切换工作目录",    []),
+    "skills":      ("列出可用技能",              []),
+    "memory":      ("搜索/列出记忆", []),
+    "agents":      ("显示后台代理",             []),
+    "mcp":         ("管理 MCP 服务器",                 ["reload", "add", "remove"]),
+    "tasks":       ("管理任务",                       ["create", "delete", "get", "clear",
                                                            "todo", "in-progress", "done", "blocked"]),
-    "task":        ("Manage tasks (alias)",               ["create", "delete", "get", "clear",
+    "task":        ("管理任务(别名)",               ["create", "delete", "get", "clear",
                                                            "todo", "in-progress", "done", "blocked"]),
-    "image":       ("Send clipboard image to model",      []),
-    "img":         ("Send clipboard image (alias)",       []),
-    "plan":        ("Enter/exit plan mode",                ["done", "status"]),
-    "compact":     ("Compact conversation history",         []),
-    "init":        ("Initialize CLAUDE.md template",        []),
-    "export":      ("Export conversation to file",          []),
-    "copy":        ("Copy last response to clipboard",      []),
-    "status":      ("Show session status and model info",   []),
-    "doctor":      ("Diagnose installation health",         []),
-    "exit":        ("Exit pycc",              []),
-    "quit":        ("Exit (alias for /exit)",             []),
-    "resume":      ("Resume last session",                []),
+    "image":       ("发送剪贴板图片给模型",      []),
+    "img":         ("发送剪贴板图片(别名)",       []),
+    "plan":        ("进入/退出计划模式",                ["done", "status"]),
+    "compact":     ("压缩对话历史",         []),
+    "init":        ("初始化 CLAUDE.md 模板",        []),
+    "export":      ("导出对话到文件",          []),
+    "copy":        ("复制最后回复到剪贴板",      []),
+    "status":      ("显示会话状态和模型信息",   []),
+    "doctor":      ("诊断安装环境",         []),
+    "exit":        ("退出 pycc",              []),
+    "quit":        ("退出(别名 /exit)",             []),
+    "resume":      ("恢复最近会话",                []),
 }
 
-
+# 设置命令行补全
 def setup_readline(history_file: Path):
     if readline is None:
         return
@@ -1693,21 +1739,22 @@ def setup_readline(history_file: Path):
     readline.set_history_length(1000)
     atexit.register(readline.write_history_file, str(history_file))
 
-    # Allow "/" to be part of a completion token so "/model" is one word
+    # 允许 "/" 作为补全标记，使 "/model" 作为一个单词
     delims = readline.get_completer_delims().replace("/", "")
     readline.set_completer_delims(delims)
 
+    # 补全器
     def completer(text: str, state: int):
         line = readline.get_line_buffer()
 
-        # ── Completing a command name: line has "/" but no space yet ──────────
+        # 补全命令名：包含 / 但无空格
         if "/" in line and " " not in line:
             matches = sorted(f"/{c}" for c in _CMD_META if f"/{c}".startswith(text))
             return matches[state] if state < len(matches) else None
 
-        # ── Completing a subcommand: "/cmd <partial>" ─────────────────────────
+        # 补全子命令："/命令 部分内容"
         if line.startswith("/") and " " in line:
-            cmd = line.split()[0][1:]          # e.g. "mcp"
+            cmd = line.split()[0][1:]
             if cmd in _CMD_META:
                 subs = _CMD_META[cmd][1]
                 matches = sorted(s for s in subs if s.startswith(text))
@@ -1715,8 +1762,8 @@ def setup_readline(history_file: Path):
 
         return None
 
+    # 自定义补全结果展示
     def display_matches(substitution: str, matches: list, longest: int):
-        """Custom display: show command descriptions alongside each match."""
         sys.stdout.write("\n")
         line = readline.get_line_buffer()
         is_cmd = "/" in line and " " not in line
@@ -1740,8 +1787,7 @@ def setup_readline(history_file: Path):
     readline.parse_and_bind("tab: complete")
 
 
-# ── Main REPL ──────────────────────────────────────────────────────────────
-
+# 主交互循环
 def repl(config: dict, initial_prompt: str = None):
     from config import HISTORY_FILE
     from context import build_system_prompt
@@ -1751,11 +1797,11 @@ def repl(config: dict, initial_prompt: str = None):
     state = AgentState()
     verbose = config.get("verbose", False)
 
-    # Inject session identity so hooks and tools can identify this run
+    # 注入会话标识
     import uuid as _uuid
     config.setdefault("_session_id", str(_uuid.uuid4()))
     config.setdefault("_cwd", str(Path.cwd()))
-    # Banner
+    # 欢迎横幅
     if not initial_prompt:
         from providers import detect_provider
         
@@ -1767,26 +1813,25 @@ def repl(config: dict, initial_prompt: str = None):
         ver_clr   = clr(f"v{VERSION}", "green")
 
         print(clr("  ╭─ ", "dim") + clr("pycc ", "cyan", "bold") + ver_clr + clr(" ─────────────────────────────────╮", "dim"))
-        print(clr("  │", "dim") + clr("  Model: ", "dim") + model_clr + " " + prov_clr)
-        print(clr("  │", "dim") + clr("  Permissions: ", "dim") + pmode)
-        print(clr("  │", "dim") + clr("  /model to switch · /help for commands", "dim"))
+        print(clr("  │", "dim") + clr("  模型: ", "dim") + model_clr + " " + prov_clr)
+        print(clr("  │", "dim") + clr("  权限: ", "dim") + pmode)
+        print(clr("  │", "dim") + clr("  /model 切换模型 · /help 查看命令", "dim"))
         print(clr("  ╰──────────────────────────────────────────────────────╯", "dim"))
 
-        # Show active non-default settings
+        # 显示非默认的激活配置
         active_flags = []
         if config.get("verbose"):
-            active_flags.append("verbose")
+            active_flags.append("详细模式")
         if config.get("thinking"):
-            active_flags.append("thinking")
+            active_flags.append("扩展思考")
         if active_flags:
             flags_str = " · ".join(clr(f, "green") for f in active_flags)
-            info(f"Active: {flags_str}")
+            info(f"已激活: {flags_str}")
         print()
 
     query_lock = threading.RLock()
 
-    # Apply rich_live config: disable in-place Live streaming if terminal has issues.
-    # Auto-detect SSH sessions and dumb terminals where ANSI cursor-up doesn't work.
+    # 应用实时渲染配置：自动检测 SSH 和哑终端
     import os as _os
     _in_ssh = bool(_os.environ.get("SSH_CLIENT") or _os.environ.get("SSH_TTY"))
     _is_dumb = (console is not None and getattr(console, "is_dumb_terminal", False))
@@ -1794,15 +1839,14 @@ def repl(config: dict, initial_prompt: str = None):
     global _RICH_LIVE
     _RICH_LIVE = _RICH and config.get("rich_live", _rich_live_default)
 
+    # 执行用户查询
     def run_query(user_input: str, is_background: bool = False):
         nonlocal verbose
 
         with query_lock:
             verbose = config.get("verbose", False)
 
-            # ── Background memory retrieval (runs parallel to model API call) ──
-            # Retrieves full content of relevant memories; result is injected
-            # into the system prompt on the NEXT call to run_query().
+            # 后台记忆检索（与 API 调用并行执行）
             _mem_result: dict = {"content": ""}
 
             def _memory_retrieval_worker() -> None:
@@ -1817,8 +1861,7 @@ def repl(config: dict, initial_prompt: str = None):
             )
             _mem_thread.start()
 
-            # Rebuild system prompt each turn (picks up cwd changes, etc.)
-            # _retrieved_memories from the PREVIOUS turn are already in config.
+            # 重建系统提示词
             system_prompt = build_system_prompt(config)
 
             print(clr("\n╭─ pycc ", "dim") + clr("●", "green") + clr(" ─────────────────────────", "dim"))
@@ -1826,49 +1869,44 @@ def repl(config: dict, initial_prompt: str = None):
             thinking_started = False
             spinner_shown = True
             _start_tool_spinner()
-            _pre_tool_text = []   # text chunks before a tool call
-            _post_tool = False    # true after a tool has executed
-            _post_tool_buf = []   # text chunks after tool (to check for duplicates)
+            _pre_tool_text = []
+            _post_tool = False
+            _post_tool_buf = []
             _duplicate_suppressed = False
 
             try:
                 for event in run(user_input, state, config, system_prompt):
-                    # Stop spinner only when visible output arrives
+                    # 有输出时停止加载动画
                     if spinner_shown:
                         show_thinking = isinstance(event, ThinkingChunk) and verbose
                         if isinstance(event, TextChunk) or show_thinking or isinstance(event, ToolStart):
                             _stop_tool_spinner()
                             spinner_shown = False
-                            # Restore │ prefix for first text chunk in plain-text (non-Rich) mode
                             if isinstance(event, TextChunk) and not _RICH and not _post_tool:
                                 print(clr("│ ", "dim"), end="", flush=True)
 
                     if isinstance(event, TextChunk):
                         if thinking_started:
-                            print("\033[0m\n")  # Reset dim ANSI + break line after thinking block
+                            print("\033[0m\n")
                             thinking_started = False
 
                         if _post_tool and not _duplicate_suppressed:
-                            # Buffer post-tool text to check for duplicates
                             _post_tool_buf.append(event.text)
                             post_so_far = "".join(_post_tool_buf).strip()
                             pre_text = "".join(_pre_tool_text).strip()
-                            # If post-tool text matches start of pre-tool text, suppress
+                            # 去重重复内容
                             if pre_text and pre_text.startswith(post_so_far):
                                 if len(post_so_far) >= len(pre_text):
-                                    # Full duplicate confirmed — suppress entirely
                                     _duplicate_suppressed = True
                                     _post_tool_buf.clear()
                                 continue
                             elif post_so_far and not pre_text.startswith(post_so_far):
-                                # Not a duplicate — flush buffered text
                                 for chunk in _post_tool_buf:
                                     stream_text(chunk)
                                 _post_tool_buf.clear()
-                                _duplicate_suppressed = True  # stop checking
+                                _duplicate_suppressed = True
                                 continue
 
-                        # stream_text auto-starts Live on first chunk when Rich available
                         if not _post_tool:
                             _pre_tool_text.append(event.text)
                         stream_text(event.text)
@@ -1876,8 +1914,8 @@ def repl(config: dict, initial_prompt: str = None):
                     elif isinstance(event, ThinkingChunk):
                         if verbose:
                             if not thinking_started:
-                                flush_response()  # stop Live before printing static thinking
-                                print(clr("  [thinking]", "dim"))
+                                flush_response()
+                                print(clr("  [思考中]", "dim"))
                                 thinking_started = True
                             stream_thinking(event.text, verbose)
 
@@ -1895,7 +1933,6 @@ def repl(config: dict, initial_prompt: str = None):
                             config.get("_cwd", "."),
                         )
                         event.granted = ask_permission_interactive(event.description, config)
-                        # Live will restart automatically on next TextChunk
 
                     elif isinstance(event, ToolEnd):
                         print_tool_end(event.name, event.result, verbose)
@@ -1904,7 +1941,7 @@ def repl(config: dict, initial_prompt: str = None):
                         _duplicate_suppressed = False
                         if not _RICH:
                             print(clr("│ ", "dim"), end="", flush=True)
-                        # Restart spinner while waiting for model's next action
+                        # 重启加载动画
                         _change_spinner_phrase()
                         _start_tool_spinner()
                         spinner_shown = True
@@ -1913,72 +1950,61 @@ def repl(config: dict, initial_prompt: str = None):
                         _stop_tool_spinner()
                         spinner_shown = False
                         if verbose:
-                            flush_response()  # stop Live before printing token info
+                            flush_response()
                             print(clr(
-                                f"\n  [tokens: +{event.input_tokens} in / "
-                                f"+{event.output_tokens} out]", "dim"
+                                f"\n  [令牌: +{event.input_tokens} 输入 / "
+                                f"+{event.output_tokens} 输出]", "dim"
                             ))
             except KeyboardInterrupt:
                 _stop_tool_spinner()
                 flush_response()
-                raise  # propagate to REPL handler which calls _track_ctrl_c
+                raise
             except Exception as e:
                 _stop_tool_spinner()
                 import urllib.error
-                # Catch 404 Not Found (Ollama model missing)
+                # 捕获 Ollama 模型不存在的 404 错误
                 if isinstance(e, urllib.error.HTTPError) and e.code == 404:
                     from providers import detect_provider
                     if detect_provider(config["model"]) == "ollama":
                         flush_response()
-                        err(f"Ollama model '{config['model']}' not found.")
-                        if _interactive_ollama_picker(config):
-                            # Remove the user message added by run() before retrying
-                            if state.messages and state.messages[-1]["role"] == "user":
-                                state.messages.pop()
-                            return run_query(user_input, is_background)
-                        # User cancelled picker — abort gracefully without crashing
+                        err(f"未找到 Ollama 模型 '{config['model']}'。")
                         return
                 raise e
 
             _stop_tool_spinner()
-            flush_response()  # stop Live, commit any remaining text
+            flush_response()
             print(clr("╰──────────────────────────────────────────────", "dim"))
             print()
 
-            # Wait for memory retrieval (short timeout — it's best-effort)
+            # 等待记忆检索完成
             _mem_thread.join(timeout=5.0)
             if _mem_result["content"]:
                 config["_retrieved_memories"] = _mem_result["content"]
 
-            # If this was a background task, we redraw the prompt for the user
+            # 后台任务完成后重绘提示符
             if is_background:
                 print(clr(f"\n[{Path.cwd().name}] » ", "yellow"), end="", flush=True)
 
-        # Drain any AskUserQuestion prompts raised during this turn
+        # 处理待处理的用户问题
         from tools import drain_pending_questions
         drain_pending_questions(config)
 
 
-
-    # ── Rapid Ctrl+C force-quit ─────────────────────────────────────────
-    # 3 Ctrl+C presses within 2 seconds → immediate hard exit
-    # Uses the default SIGINT (raises KeyboardInterrupt) but wraps the
-    # main loop to track timing of consecutive interrupts.
+    # 快速强制退出：2秒内按3次Ctrl+C
     _ctrl_c_times = []
 
     def _track_ctrl_c():
-        """Call this on every KeyboardInterrupt. Returns True if force-quit triggered."""
         now = time.time()
         _ctrl_c_times.append(now)
-        # Keep only presses within the last 2 seconds
+        # 仅保留2秒内的按键记录
         _ctrl_c_times[:] = [t for t in _ctrl_c_times if now - t <= 2.0]
         if len(_ctrl_c_times) >= 3:
             _stop_tool_spinner()
-            print(clr("\n\n  Force quit (3x Ctrl+C).", "red", "bold"))
+            print(clr("\n\n  强制退出 (3次Ctrl+C)。", "red", "bold"))
             os._exit(1)
         return False
 
-    # ── Main loop ──
+    # 主循环
     if initial_prompt:
         try:
             run_query(initial_prompt)
@@ -1987,48 +2013,33 @@ def repl(config: dict, initial_prompt: str = None):
             print()
         return
 
-    # ── Bracketed paste mode ──────────────────────────────────────────────
-    # Terminals that support bracketed paste wrap pasted content with
-    #   ESC[200~  (start)  …content…  ESC[201~  (end)
-    # This lets us collect the entire paste as one unit regardless of
-    # how many newlines it contains, without any fragile timing tricks.
+    # 括号粘贴模式支持
     _PASTE_START = "\x1b[200~"
     _PASTE_END   = "\x1b[201~"
     _bpm_active  = sys.stdin.isatty() and sys.platform != "win32"
 
     if _bpm_active:
-        sys.stdout.write("\x1b[?2004h")   # enable bracketed paste mode
+        sys.stdout.write("\x1b[?2004h")
         sys.stdout.flush()
 
+    # 读取用户输入（支持多行粘贴）
     def _read_input(prompt: str) -> str:
-        """Read one user turn, collecting multi-line pastes as a single string.
-
-        Strategy (in priority order):
-        1. Bracketed paste mode (ESC[200~ … ESC[201~): reliable, zero latency,
-           supported by virtually all modern terminal emulators on Linux/macOS.
-        2. Timing fallback: for terminals without bracketed paste support, read
-           any data buffered in stdin within a short window after the first line.
-        3. Plain input(): for pipes / non-interactive use / Windows.
-        """
         import select as _sel
 
-        # ── Phase 1: get first line via readline (history, line-edit intact) ──
+        # 读取第一行
         first = input(prompt)
 
-        # ── Phase 2: bracketed paste? ─────────────────────────────────────────
+        # 括号粘贴模式处理
         if _PASTE_START in first:
-            # Strip leading marker; first line may already contain paste end too
             body = first.replace(_PASTE_START, "")
             if _PASTE_END in body:
-                # Single-line paste (no embedded newlines)
                 return body.replace(_PASTE_END, "").strip()
 
-            # Multi-line paste: keep reading until end marker arrives
             lines = [body]
             while True:
                 ready = _sel.select([sys.stdin], [], [], 2.0)[0]
                 if not ready:
-                    break  # safety timeout — paste stalled
+                    break
                 raw = sys.stdin.readline()
                 if not raw:
                     break
@@ -2042,18 +2053,17 @@ def repl(config: dict, initial_prompt: str = None):
 
             result = "\n".join(lines).strip()
             n = result.count("\n") + 1
-            info(f"  (pasted {n} line{'s' if n > 1 else ''})")
+            info(f"  (已粘贴 {n} 行)")
             return result
 
-        # ── Phase 3: timing fallback ─────────────────────────────────────────
+        # 时序备用方案
         if sys.stdin.isatty():
             lines = [first]
             import time as _time
 
             if sys.platform == "win32":
-                # Windows: use msvcrt.kbhit() to detect buffered paste data
                 import msvcrt
-                deadline = 0.12   # wider window for Windows paste latency
+                deadline = 0.12
                 chunk_to = 0.03
                 t0 = _time.monotonic()
                 while (_time.monotonic() - t0) < deadline:
@@ -2065,9 +2075,8 @@ def repl(config: dict, initial_prompt: str = None):
                         break
                     stripped = raw.rstrip("\n").rstrip("\r")
                     lines.append(stripped)
-                    t0 = _time.monotonic()  # extend while data keeps coming
+                    t0 = _time.monotonic()
             else:
-                # Unix: use select() for precise timing
                 deadline = 0.06
                 chunk_to = 0.025
                 t0 = _time.monotonic()
@@ -2086,13 +2095,13 @@ def repl(config: dict, initial_prompt: str = None):
 
             if len(lines) > 1:
                 result = "\n".join(lines).strip()
-                info(f"  (pasted {len(lines)} lines)")
+                info(f"  (已粘贴 {len(lines)} 行)")
                 return result
 
         return first
 
     while True:
-        # Show notifications for background agents that finished
+        # 显示后台任务通知
         _print_background_notifications()
         try:
             cwd_short = Path.cwd().name
@@ -2103,53 +2112,50 @@ def repl(config: dict, initial_prompt: str = None):
             try:
                 save_latest("", state, config)
             except Exception as e:
-                warn(f"Auto-save failed on exit: {e}")
+                warn(f"退出时自动保存失败: {e}")
             if _bpm_active:
-                sys.stdout.write("\x1b[?2004l")  # disable bracketed paste mode
+                sys.stdout.write("\x1b[?2004l")
                 sys.stdout.flush()
-            ok("Goodbye!")
+            ok("再见！")
             sys.exit(0)
 
         if not user_input:
             continue
 
         result = handle_slash(user_input, state, config)
-        # ── Sentinel processing loop ──
-        # Processes sentinel tuples returned by commands. SSJ-originated
-        # sentinels loop back to the SSJ menu after completion.
+        # 处理标记命令
         while isinstance(result, tuple):
-            # Image sentinel: ("__image__", prompt_text)
+            # 图片标记
             if result[0] == "__image__":
                 _, image_prompt = result
                 try:
                     run_query(image_prompt)
                 except KeyboardInterrupt:
                     _track_ctrl_c()
-                    print(clr("\n  (interrupted)", "yellow"))
+                    print(clr("\n  (已中断)", "yellow"))
                 break
 
-            # Plan sentinel: ("__plan__", description)
+            # 计划标记
             if result[0] == "__plan__":
                 _, plan_desc = result
                 try:
-                    run_query(f"Please analyze the codebase and create a detailed implementation plan for: {plan_desc}")
+                    run_query(f"请分析代码库并为以下需求制定详细的执行计划: {plan_desc}")
                 except KeyboardInterrupt:
                     _track_ctrl_c()
-                    print(clr("\n  (interrupted)", "yellow"))
+                    print(clr("\n  (已中断)", "yellow"))
                 break
 
-            # Skill match (fallback): (SkillDef, args_str)
+            # 技能匹配
             skill, skill_args = result
-            info(f"Running skill: {skill.name}")
+            info(f"正在执行技能: {skill.name}")
             try:
                 from skill import substitute_arguments
                 rendered = substitute_arguments(skill.prompt, skill_args, skill.arguments)
-                run_query(f"[Skill: {skill.name}]\n\n{rendered}")
+                run_query(f"[技能: {skill.name}]\n\n{rendered}")
             except KeyboardInterrupt:
                 _track_ctrl_c()
-                print(clr("\n  (interrupted)", "yellow"))
+                print(clr("\n  (已中断)", "yellow"))
             break
-        # Sentinel or command was handled — don't fall through to run_query
         if result:
             continue
 
@@ -2157,31 +2163,29 @@ def repl(config: dict, initial_prompt: str = None):
             run_query(user_input)
         except KeyboardInterrupt:
             _track_ctrl_c()
-            print(clr("\n  (interrupted)", "yellow"))
-            # Keep conversation history up to the interruption
+            print(clr("\n  (已中断)", "yellow"))
 
 
-# ── Entry point ────────────────────────────────────────────────────────────
-
+# 程序入口
 def main():
     parser = argparse.ArgumentParser(
         prog="pycc",
-        description="pycc — minimal Python Claude Code implementation",
+        description="pycc — Claude Code 的极简 Python 实现",
         add_help=False,
     )
-    parser.add_argument("prompt", nargs="*", help="Initial prompt (non-interactive)")
+    parser.add_argument("prompt", nargs="*", help="初始提示词(非交互模式)")
     parser.add_argument("-p", "--print", "--print-output",
                         dest="print_mode", action="store_true",
-                        help="Non-interactive mode: run prompt and exit")
-    parser.add_argument("-m", "--model", help="Override model")
+                        help="非交互模式: 执行提示词后退出")
+    parser.add_argument("-m", "--model", help="覆盖模型配置")
     parser.add_argument("--accept-all", action="store_true",
-                        help="Never ask permission (accept all operations)")
+                        help="无需授权确认(接受所有操作)")
     parser.add_argument("--verbose", action="store_true",
-                        help="Show thinking + token counts")
+                        help="显示思考过程+令牌计数")
     parser.add_argument("--thinking", action="store_true",
-                        help="Enable extended thinking")
-    parser.add_argument("--version", action="store_true", help="Print version")
-    parser.add_argument("-h", "--help", action="store_true", help="Show help")
+                        help="启用扩展思考模式")
+    parser.add_argument("--version", action="store_true", help="打印版本信息")
+    parser.add_argument("-h", "--help", action="store_true", help="显示帮助")
 
     args = parser.parse_args()
 
@@ -2198,12 +2202,9 @@ def main():
 
     config = load_config()
 
-    # Apply CLI overrides first (so key check uses the right provider)
+    # 应用命令行参数覆盖配置
     if args.model:
         m = args.model
-        # Convert "provider:model" → "provider/model" only when left side is a known provider
-        # (e.g. "ollama:llama3.3" → "ollama/llama3.3"), but leave version tags intact
-        # (e.g. "ollama/qwen3.5:35b" must NOT become "ollama/qwen3.5/35b")
         if "/" not in m and ":" in m:
             from providers import PROVIDERS
             left, _ = m.split(":", 1)
@@ -2217,18 +2218,18 @@ def main():
     if args.thinking:
         config["thinking"] = True
 
-    # Check API key for active provider (warn only, don't block local providers)
+    # 检查 API 密钥
     if not has_api_key(config):
         pname = detect_provider(config["model"])
         prov  = PROVIDERS.get(pname, {})
         env   = prov.get("api_key_env", "")
-        if env:   # local providers like ollama have no env key requirement
-            warn(f"No API key found for provider '{pname}'. "
-                 f"Set {env} or run: /config {pname}_api_key=YOUR_KEY")
+        if env:
+            warn(f"未找到提供商 '{pname}' 的 API 密钥。"
+                 f"设置环境变量 {env} 或执行: /config {pname}_api_key=你的密钥")
 
     initial = " ".join(args.prompt) if args.prompt else None
     if args.print_mode and not initial:
-        err("--print requires a prompt argument")
+        err("--print 需要指定提示词参数")
         sys.exit(1)
 
     repl(config, initial_prompt=initial)
@@ -2236,3 +2237,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
