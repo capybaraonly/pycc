@@ -233,9 +233,8 @@ _tool_spinner_stop = threading.Event()
 _spinner_phrase = ""
 _spinner_lock = threading.Lock()
 
-# 后台运行工具加载动画
+# 后台运行工具加载
 def _run_tool_spinner():
-    """后台线程运行单行加载动画。"""
     chars = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
     i = 0
     while not _tool_spinner_stop.is_set():
