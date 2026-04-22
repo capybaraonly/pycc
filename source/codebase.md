@@ -52,7 +52,7 @@ Plan 模式下每 5 轮自动插一条提醒消息，只读工具白名单强制
 - 消息格式转换：中立格式 ↔ Anthropic 格式、OpenAI 格式互转
 - `calc_cost()`：按模型名查 input/output token 单价，算一次调用花了多少钱
 
-所有 provider 都 yield 同类型的事件：`TextChunk` / `ThinkingChunk` / `AssistantTurn`（含工具调用列表和 token 用量）。
+所有 provider 都 yield 同类型的事件：`TextChunk` / `ThinkingChunk` / `Response`（含工具调用列表和 token 用量）。
 
 ---
 

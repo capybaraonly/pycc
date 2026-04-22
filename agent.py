@@ -11,7 +11,7 @@ import time as _time
 from tool_registry import get_tool_schemas
 from tools import execute_tool
 import tools as _tools_init  # 确保导入时注册内置工具
-from providers import stream, AssistantTurn, TextChunk, ThinkingChunk, detect_provider
+from providers import stream, Response, TextChunk, ThinkingChunk, detect_provider
 from compaction import maybe_compact, apply_context_collapse
 from hooks.dispatcher import fire_pre_tool, fire_post_tool, fire_stop
 
@@ -88,7 +88,7 @@ def run(
         if cancel_check and cancel_check():
             return
         state.turn_count += 1
-        assistant_turn: AssistantTurn | None = None
+        response: Response | None = None
 
         # 当接近上下文窗口限制时进行压缩
         maybe_compact(state, config)
@@ -112,7 +112,7 @@ def run(
         # 记录 API 调用时间（用于微型压缩空闲计时器）
         config["_last_api_call_time"] = _time.time()
 
-        # 第四层：实时上下文折叠（无损压缩视图）
+        # 读时投影
         messages_for_api = apply_context_collapse(state.messages, config)
 
         # 从模型厂商流式输出（根据模型名称自动检测）
@@ -123,12 +123,12 @@ def run(
             tool_schemas=get_tool_schemas(),
             config=config,
         ):
-            if isinstance(event, (TextChunk, ThinkingChunk)):
+            if isinstance(event, (TextChunk, ThinkingChunk)): # 实时片段 → 立刻抛出去展示
                 yield event
-            elif isinstance(event, AssistantTurn):
-                assistant_turn = event
+            elif isinstance(event, Response): # 完整结果 → 暂时存起来，不展示
+                response = event
 
-        if assistant_turn is None:
+        if response is None:
             break
 
         # 记录历史前移除临时的计划模式提醒
@@ -140,23 +140,23 @@ def run(
         # 以中立格式记录助手消息
         state.messages.append({
             "role":       "assistant",
-            "content":    assistant_turn.text,
-            "tool_calls": assistant_turn.tool_calls,
+            "content":    response.text,
+            "tool_calls": response.tool_calls,
         })
 
-        state.total_input_tokens  += assistant_turn.in_tokens
-        state.total_output_tokens += assistant_turn.out_tokens
-        yield TurnDone(assistant_turn.in_tokens, assistant_turn.out_tokens)
+        state.total_input_tokens  += response.in_tokens
+        state.total_output_tokens += response.out_tokens
+        yield TurnDone(response.in_tokens, response.out_tokens)
 
         # 停止钩子（每轮完成后触发）
-        _finish_reason = "tool_use" if assistant_turn.tool_calls else "end_turn"
+        _finish_reason = "tool_use" if response.tool_calls else "end_turn"
         fire_stop(_finish_reason, config.get("_session_id", ""), config.get("_cwd", "."))
 
-        if not assistant_turn.tool_calls:
+        if not response.tool_calls:
             break   # 无工具调用 → 单轮对话完成
 
         # ── 执行工具 ────────────────────────────────────────────────
-        for toolcall in assistant_turn.tool_calls:
+        for toolcall in response.tool_calls:
             yield ToolStart(toolcall["name"], toolcall["input"])
 
             # 工具执行前钩子：可阻止或自动批准

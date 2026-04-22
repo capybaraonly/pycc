@@ -162,7 +162,7 @@ def _ai_select_memories(
     Falls back to keyword results on any error.
     """
     try:
-        from providers import stream, AssistantTurn
+        from providers import stream, Response
         from .scan import scan_all_memories
 
         headers = scan_all_memories()
@@ -190,7 +190,7 @@ def _ai_select_memories(
             tool_schemas=[],
             config={**config, "max_tokens": 256, "no_tools": True},
         ):
-            if isinstance(event, AssistantTurn):
+            if isinstance(event, Response):
                 result_text = event.text
                 break
 
