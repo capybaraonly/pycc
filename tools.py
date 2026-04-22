@@ -1,4 +1,4 @@
-"""Tool definitions and implementations for pycc."""
+"""pycc 的工具定义与实现"""
 import json
 import os
 import re
@@ -12,12 +12,12 @@ from typing import Callable, Optional
 from tool_registry import ToolDef, register_tool
 from tool_registry import execute_tool as _registry_execute
 
-# ── AskUserQuestion state ──────────────────────────────────────────────────────
-# The main REPL loop drains _pending_questions and fills _question_answers.
+# ── AskUserQuestion 状态 ──────────────────────────────────────────────────────
+# 主 REPL 循环从 _pending_questions 取出问题，并将答案存入 _question_answers。
 _pending_questions: list[dict] = []   # [{id, question, options, allow_freetext, event, result_holder}]
 _ask_lock = threading.Lock()
 
-# ── Tool JSON schemas (sent to Claude API) ─────────────────────────────────
+# ── 工具 JSON 结构（发送给 Claude API）─────────────────────────────────
 
 TOOL_SCHEMAS = [
     {

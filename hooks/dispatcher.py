@@ -31,10 +31,10 @@ def _matches(matcher: str, tool_name: str) -> bool:
 # ── 工具执行前钩子 ──────────────────────────────────────────────────────────
 
 def fire_pre_tool(
-    tool_name: str,
-    tool_input: dict,
-    session_id: str,
-    cwd: str,
+    tool_name: str,     # 要调用的工具名字
+    tool_input: dict,   # 工具的参数
+    session_id: str,    # 会话ID
+    cwd: str,           # 当前目录
 ) -> HookDecision:
     """运行所有匹配的 PreToolUse 钩子，并返回最终决策结果。
 
@@ -80,7 +80,7 @@ def fire_post_tool(
     cwd: str,
 ) -> None:
     """运行所有匹配的 PostToolUse 钩子（触发后无需等待，不影响决策）。"""
-    cfg = get_hooks_config(cwd)
+    cfg = get_hooks_config(cwd) # 读取当前目录下的钩子配置文件（哪些工具要触发后置操作）
     stdin_data = {
         "session_id": session_id,
         "tool_name": tool_name,
