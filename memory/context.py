@@ -1,9 +1,9 @@
-"""Memory context building for system prompt injection.
+"""用于注入系统提示词的记忆上下文构建模块。
 
-Provides:
-  get_memory_context()      — full context string for system prompt
-  find_relevant_memories()  — keyword (+ optional AI) relevance filtering
-  truncate_index_content()  — line + byte truncation with warning
+提供功能：
+  get_memory_context()      - 生成用于系统提示词的完整上下文字符串
+  find_relevant_memories()  - 关键词（+ 可选 AI）相关性过滤
+  truncate_index_content()  - 按行 + 字节截断内容并添加警告
 """
 from __future__ import annotations
 
@@ -23,15 +23,15 @@ from .scan import scan_all_memories, format_memory_manifest, memory_freshness_te
 from .types import MEMORY_SYSTEM_PROMPT
 
 
-# ── Index truncation ───────────────────────────────────────────────────────
+# ── 索引内容截断 ───────────────────────────────────────────────────────
 
 def truncate_index_content(raw: str) -> str:
-    """Truncate MEMORY.md content to line AND byte limits, appending a warning.
+    """将 MEMORY.md 内容按行数和字节数限制截断，并附加警告。
 
-    Matches Claude Code's truncateEntrypointContent:
-      - Line-truncates first (natural boundary)
-      - Then byte-truncates at the last newline before the cap
-      - Appends which limit fired
+    与 Claude Code 的截断逻辑保持一致：
+      - 先按行截断（自然边界）
+      - 再按字节数在限制前最后一个换行处截断
+      - 记录触发的限制类型
     """
     trimmed = raw.strip()
     content_lines = trimmed.split("\n")
@@ -44,54 +44,57 @@ def truncate_index_content(raw: str) -> str:
     if not was_line_truncated and not was_byte_truncated:
         return trimmed
 
+    # 先按行数截断
     truncated = "\n".join(content_lines[:MAX_INDEX_LINES]) if was_line_truncated else trimmed
 
+    # 再按字节数截断
     if len(truncated.encode()) > MAX_INDEX_BYTES:
-        # Cut at last newline before byte limit
         raw_bytes = truncated.encode()
+        # 在字节限制前找到最后一个换行符
         cut = raw_bytes[:MAX_INDEX_BYTES].rfind(b"\n")
         truncated = raw_bytes[: cut if cut > 0 else MAX_INDEX_BYTES].decode(errors="replace")
 
+    # 生成警告原因
     if was_byte_truncated and not was_line_truncated:
-        reason = f"{byte_count:,} bytes (limit: {MAX_INDEX_BYTES:,}) — index entries are too long"
+        reason = f"{byte_count:,} 字节 (限制: {MAX_INDEX_BYTES:,}) - 索引条目过长"
     elif was_line_truncated and not was_byte_truncated:
-        reason = f"{line_count} lines (limit: {MAX_INDEX_LINES})"
+        reason = f"{line_count} 行 (限制: {MAX_INDEX_LINES})"
     else:
-        reason = f"{line_count} lines and {byte_count:,} bytes"
+        reason = f"{line_count} 行 和 {byte_count:,} 字节"
 
     warning = (
-        f"\n\n> WARNING: {INDEX_FILENAME} is {reason}. "
-        "Only part of it was loaded. Keep index entries to one line under ~150 chars."
+        f"\n\n> 警告: {INDEX_FILENAME} 超出 {reason}。"
+        "仅加载部分内容。请将索引条目控制在 1 行、约 150 字符以内。"
     )
     return truncated + warning
 
 
-# ── System prompt context ──────────────────────────────────────────────────
+# ── 系统提示词上下文 ──────────────────────────────────────────────────
 
 def get_memory_context(include_guidance: bool = False) -> str:
-    """Return memory context for injection into the system prompt.
+    """返回用于注入系统提示词的记忆上下文。
 
-    Combines user-level and project-level MEMORY.md content (if present).
-    Returns empty string when no memories exist.
+    合并用户级和项目级 MEMORY.md 内容（存在时）。
+    无记忆时返回空字符串。
 
-    Args:
-        include_guidance: if True, prepend the full memory system guidance
-                          (MEMORY_SYSTEM_PROMPT). Normally False since the
-                          system prompt template already includes brief guidance.
+    参数:
+        include_guidance: 若为 True，在开头添加完整记忆使用指南
+                          (MEMORY_SYSTEM_PROMPT)。通常为 False，
+                          因为系统提示词已包含简要指南。
     """
     parts: list[str] = []
 
-    # User-level index
+    # 用户级记忆索引
     user_content = get_index_content("user")
     if user_content:
         truncated = truncate_index_content(user_content)
         parts.append(truncated)
 
-    # Project-level index (labelled separately)
+    # 项目级记忆索引（单独标记）
     proj_content = get_index_content("project")
     if proj_content:
         truncated = truncate_index_content(proj_content)
-        parts.append(f"[Project memories]\n{truncated}")
+        parts.append(f"[项目记忆]\n{truncated}")
 
     if not parts:
         return ""
@@ -102,7 +105,7 @@ def get_memory_context(include_guidance: bool = False) -> str:
     return body
 
 
-# ── Relevant memory finder ─────────────────────────────────────────────────
+# ── 相关记忆查找 ─────────────────────────────────────────────────
 
 def find_relevant_memories(
     query: str,
@@ -110,23 +113,23 @@ def find_relevant_memories(
     use_ai: bool = False,
     config: dict | None = None,
 ) -> list[dict]:
-    """Find memories relevant to a query.
+    """查找与查询相关的记忆。
 
-    Strategy:
-      1. Always: keyword match on name + description + content
-      2. If use_ai=True and config has a model: use a small AI call to rank
+    策略:
+      1. 基础：对名称 + 描述 + 内容进行关键词匹配
+      2. 若 use_ai=True 且配置了模型：使用轻量 AI 调用进行排序
 
-    Returns:
-        List of dicts with keys: name, description, type, scope, content,
+    返回:
+        字典列表，包含键：name, description, type, scope, content,
         file_path, mtime_s, freshness_text
     """
-    # Step 1: Keyword filter
+    # 步骤 1：关键词过滤
     keyword_results = search_memory(query)
     if not keyword_results:
         return []
 
     if not use_ai or not config:
-        # Return top max_results by recency (newest first)
+        # 按时间最新排序，返回前 max_results 条
         from .scan import scan_all_memories
         headers = scan_all_memories()
         path_to_mtime = {h.file_path: h.mtime_s for h in headers}
@@ -144,10 +147,11 @@ def find_relevant_memories(
                 "mtime_s": mtime_s,
                 "freshness_text": memory_freshness_text(mtime_s),
             })
+        # 按修改时间倒序
         results.sort(key=lambda r: r["mtime_s"], reverse=True)
         return results[:max_results]
 
-    # Step 2: AI-powered relevance selection (optional, lightweight)
+    # 步骤 2：AI 增强相关性筛选（可选、轻量级）
     return _ai_select_memories(query, keyword_results, max_results, config)
 
 
@@ -157,9 +161,9 @@ def _ai_select_memories(
     max_results: int,
     config: dict,
 ) -> list[dict]:
-    """Use a fast AI call to select the most relevant memories from candidates.
+    """使用快速 AI 调用从候选列表中选择最相关的记忆。
 
-    Falls back to keyword results on any error.
+    出现任何错误时，回退到关键词结果。
     """
     try:
         from providers import stream, Response
@@ -168,19 +172,19 @@ def _ai_select_memories(
         headers = scan_all_memories()
         path_to_mtime = {h.file_path: h.mtime_s for h in headers}
 
-        # Build manifest of candidates only
+        # 仅构建候选记忆清单
         manifest_lines = []
         for i, e in enumerate(candidates):
             manifest_lines.append(f"{i}: [{e.type}] {e.name} — {e.description}")
         manifest = "\n".join(manifest_lines)
 
         system = (
-            "You select memories relevant to a query. "
-            "Return a JSON object with key 'indices' containing a list of integer indices "
-            f"(0-based) from the provided list. Select at most {max_results} entries. "
-            "Only include indices clearly relevant to the query. Return {\"indices\": []} if none."
+            "你需要选择与查询相关的记忆。"
+            "返回一个 JSON 对象，key 为 'indices'，值为整数索引列表"
+            f"(从 0 开始)。最多选择 {max_results} 条。"
+            "只包含与查询明显相关的索引。无相关时返回 {\"indices\": []}。"
         )
-        messages = [{"role": "user", "content": f"Query: {query}\n\nMemories:\n{manifest}"}]
+        messages = [{"role": "user", "content": f"查询: {query}\n\n记忆列表:\n{manifest}"}]
 
         result_text = ""
         for event in stream(
@@ -199,7 +203,7 @@ def _ai_select_memories(
         selected_indices = [int(i) for i in parsed.get("indices", []) if isinstance(i, int)]
 
     except Exception:
-        # Fall back to keyword results
+        # 出错则回退到关键词结果
         selected_indices = list(range(min(max_results, len(candidates))))
 
     results = []

@@ -1,12 +1,12 @@
-"""Bash command safety analyzer.
+"""Bash 命令安全分析器。
 
-Replaces the simple prefix whitelist with three-level structural analysis:
+将简单的前缀白名单替换为三级结构分析：
 
-  safe      — auto-approve (well-known read-only / build commands)
-  warn      — show to user before running (state-modifying but common)
-  dangerous — require explicit confirmation (potentially irreversible at scale)
+  safe      — 自动批准（已知的只读/构建命令）
+  warn      — 运行前展示给用户（会修改状态但属于常规操作）
+  dangerous — 需要明确确认（大规模不可逆风险）
 
-Usage::
+用法::
 
     from security.bash_analyzer import analyze_bash, BashRiskLevel
 
@@ -20,179 +20,179 @@ from enum import Enum
 
 
 class BashRiskLevel(Enum):
-    safe      = "safe"
-    warn      = "warn"
-    dangerous = "dangerous"
+    safe      = "safe"       # 安全
+    warn      = "warn"       # 警告
+    dangerous = "dangerous"  # 危险
 
 
-# ── Dangerous patterns ─────────────────────────────────────────────────────
-# These match commands that can cause catastrophic, hard-to-reverse damage.
+# ── 危险模式匹配 ─────────────────────────────────────────────────────
+# 匹配可能造成灾难性、难以恢复的破坏命令。
 
 _DANGEROUS: list[tuple[re.Pattern, str]] = [
-    # rm -rf on / or /* (root filesystem wipe)
+    # rm -rf 删除根目录 / 或 /*
     (
         re.compile(
             r'\brm\b[^#\n]*-[A-Za-z]*r[A-Za-z]*f[A-Za-z]*\s+(/[\s*]?$|/\*|/\s)',
             re.IGNORECASE,
         ),
-        "recursive force-delete on root path",
+        "递归强制删除根路径",
     ),
     (
         re.compile(
             r'\brm\b[^#\n]*-[A-Za-z]*f[A-Za-z]*r[A-Za-z]*\s+(/[\s*]?$|/\*|/\s)',
             re.IGNORECASE,
         ),
-        "recursive force-delete on root path",
+        "递归强制删除根路径",
     ),
-    # Pipe download directly into a shell interpreter
+    # 下载后直接管道执行
     (
         re.compile(
             r'(curl|wget)\b[^#\n]*\|\s*(bash|sh|zsh|fish|python[23]?|perl|ruby)\b',
             re.IGNORECASE,
         ),
-        "pipe download to shell execution",
+        "下载内容直接管道执行",
     ),
-    # Download then execute pattern: wget -O /tmp/x.sh && bash /tmp/x.sh
+    # 下载并执行模式
     (
         re.compile(
             r'(curl|wget)\b[^#\n]*&&[^#\n]*(bash|sh|zsh|python[23]?|perl|ruby)\b',
             re.IGNORECASE,
         ),
-        "download and execute pattern",
+        "下载并执行模式",
     ),
-    # Direct write to block devices
+    # 直接写入块设备
     (
         re.compile(r'>\s*/dev/sd[a-z]\b', re.IGNORECASE),
-        "direct write to disk block device",
+        "直接写入磁盘块设备",
     ),
     (
         re.compile(r'\bdd\b[^#\n]*\bof=/dev/sd[a-z]\b', re.IGNORECASE),
-        "dd write to disk block device",
+        "dd 命令写入磁盘块设备",
     ),
-    # Privileged recursive delete
+    # 管理员权限递归删除
     (
         re.compile(r'\bsudo\b[^#\n]*\brm\b[^#\n]*-[A-Za-z]*r', re.IGNORECASE),
-        "privileged recursive delete",
+        "管理员权限递归删除",
     ),
-    # chmod 777 on root or system directories
+    # 系统目录 chmod 777
     (
         re.compile(
             r'\bchmod\b[^#\n]*777[^#\n]*/(?:$|\s|etc|usr|bin|sbin|lib|var|home)',
             re.IGNORECASE,
         ),
-        "world-writable permissions on system path",
+        "系统路径设置为全局可写",
     ),
-    # Overwrite /etc/passwd, /etc/hosts, /etc/shadow
+    # 覆盖关键系统文件
     (
         re.compile(r'>\s*/etc/(passwd|shadow|hosts|sudoers)\b', re.IGNORECASE),
-        "overwrite critical system file",
+        "覆盖关键系统文件",
     ),
 ]
 
 
-# ── Warn patterns ──────────────────────────────────────────────────────────
-# State-modifying but commonly legitimate; user should see before running.
+# ── 警告模式匹配 ──────────────────────────────────────────────────────────
+# 会修改系统状态，但通常合法；运行前需要用户确认。
 
 _WARN: list[tuple[re.Pattern, str]] = [
-    # Any rm -r (not already caught as dangerous)
+    # 任意 rm -r（未被危险规则匹配）
     (
         re.compile(r'\brm\b[^#\n]*-[A-Za-z]*r[A-Za-z]*', re.IGNORECASE),
-        "recursive delete",
+        "递归删除",
     ),
-    # chmod on any path
+    # 修改文件权限
     (
         re.compile(r'\bchmod\b', re.IGNORECASE),
-        "file permission change",
+        "修改文件权限",
     ),
-    # chown
+    # 修改文件所有者
     (
         re.compile(r'\bchown\b', re.IGNORECASE),
-        "file ownership change",
+        "修改文件所有者",
     ),
-    # Environment variable tampering (PATH, LD_PRELOAD, etc.)
+    # 篡改环境变量
     (
         re.compile(
             r'(?:^|export\s+)(PATH|LD_PRELOAD|LD_LIBRARY_PATH|DYLD_LIBRARY_PATH)\s*=',
             re.IGNORECASE | re.MULTILINE,
         ),
-        "environment variable modification",
+        "修改环境变量",
     ),
-    # Network download (without shell pipe — already caught above)
+    # 网络下载（无管道执行）
     (
         re.compile(r'\b(curl|wget)\b(?![^#\n]*\|\s*(bash|sh|zsh))', re.IGNORECASE),
-        "network download",
+        "网络下载",
     ),
-    # git push / git force-push
+    # git 推送
     (
         re.compile(r'\bgit\s+push\b', re.IGNORECASE),
-        "push to remote repository",
+        "推送到远程仓库",
     ),
-    # Package installation
+    # 包安装
     (
         re.compile(r'\b(pip[23]?|pip)\s+install\b', re.IGNORECASE),
-        "Python package installation",
+        "安装 Python 包",
     ),
     (
         re.compile(r'\bnpm\s+install\b', re.IGNORECASE),
-        "npm package installation",
+        "安装 npm 包",
     ),
     (
         re.compile(r'\bcargo\s+install\b', re.IGNORECASE),
-        "Rust package installation",
+        "安装 Rust 包",
     ),
     (
         re.compile(r'\bapt(?:-get)?\s+(install|remove|purge)\b', re.IGNORECASE),
-        "system package management",
+        "系统包管理操作",
     ),
     (
         re.compile(r'\bbrew\s+install\b', re.IGNORECASE),
-        "Homebrew package installation",
+        "安装 Homebrew 包",
     ),
-    # Command substitution in arguments (e.g. cmd $(evil))
+    # 命令替换
     (
         re.compile(r'\$\([^)]+\)', re.IGNORECASE),
-        "command substitution",
+        "命令替换",
     ),
-    # Path traversal escaping cwd
+    # 深层路径穿越
     (
         re.compile(r'(\.\./){4,}'),
-        "deep path traversal",
+        "深层路径穿越",
     ),
 ]
 
 
-# ── Safe prefixes ──────────────────────────────────────────────────────────
-# Commands that are clearly read-only or well-understood safe operations.
-# Checked with startswith — keep entries sorted longest-first for specificity.
+# ── 安全命令前缀 ──────────────────────────────────────────────────────────
+# 明确只读或安全的操作。
+# 按最长优先排序，确保匹配精度。
 
 _SAFE_PREFIXES: tuple[str, ...] = (
-    # git read-only
+    # git 只读命令
     "git log", "git status", "git diff", "git show", "git branch",
     "git remote -v", "git remote show", "git stash list", "git tag",
     "git describe", "git shortlog", "git rev-parse", "git ls-files",
     "git blame", "git annotate", "git bisect",
-    # Metadata / inspection
+    # 元数据/查看命令
     "ls", "ll", "la", "dir",
     "cat ", "bat ", "head ", "tail ", "wc ",
     "pwd", "echo ", "printf ",
     "date", "which ", "type ", "command ",
     "env", "printenv", "uname", "whoami", "id",
     "file ", "stat ",
-    # Search / find (read-only)
+    # 搜索/查找（只读）
     "find ", "grep ", "rg ", "ag ", "fd ",
     "ack ",
-    # System info (read-only)
+    # 系统信息（只读）
     "df ", "du ", "free ", "top -bn", "ps ",
     "lsof ", "netstat ", "ss ", "ifconfig", "ip ",
     "uptime", "hostname",
-    # Language runtimes (local script execution)
+    # 语言运行时（本地安全执行）
     "python -c", "python3 -c",
     "python -m pytest", "python -m py_compile", "python -m mypy",
     "python -m flake8", "python -m black --check", "python -m ruff check",
     "pytest", "py.test",
     "node -e", "node -p",
     "ruby -e", "perl -e",
-    # Build / test (well-known safe)
+    # 构建/测试（安全）
     "make ", "make\n", "make ",
     "cargo build", "cargo test", "cargo check", "cargo clippy", "cargo fmt",
     "cargo run",
@@ -200,57 +200,56 @@ _SAFE_PREFIXES: tuple[str, ...] = (
     "go build", "go test", "go vet", "go fmt", "go mod",
     "mvn test", "mvn compile", "mvn package",
     "gradle test", "gradle build",
-    # Package info (read-only)
+    # 包信息（只读）
     "pip show", "pip list", "pip freeze", "pip check",
     "npm list", "npm ls", "npm info", "npm audit",
     "cargo metadata",
     "brew list", "brew info", "brew outdated",
-    # HTTP read-only
+    # HTTP 只读
     "curl -I ", "curl --head ",
     "curl -s https://", "curl -s http://",
 )
 
 
-# ── Core analyzer ──────────────────────────────────────────────────────────
+# ── 核心分析函数 ──────────────────────────────────────────────────────────
 
 def analyze_bash(command: str) -> tuple[BashRiskLevel, str]:
-    """Analyze a shell command and return a risk level with a short reason.
+    """分析 shell 命令并返回风险等级与简要原因。
 
-    Args:
-        command: the shell command string to analyze
+    参数:
+        command: 待分析的 shell 命令
 
-    Returns:
-        (BashRiskLevel.safe,      "")       — auto-approvable
-        (BashRiskLevel.warn,      reason)   — show to user, but not catastrophic
-        (BashRiskLevel.dangerous, reason)   — must confirm before running
+    返回:
+        (BashRiskLevel.safe,      "")       — 可自动批准
+        (BashRiskLevel.warn,      reason)   — 需用户确认，无灾难性风险
+        (BashRiskLevel.dangerous, reason)   — 必须确认后运行
 
-    The analysis is conservative on both ends: known-safe commands are
-    whitelisted, known-dangerous patterns are flagged; everything else
-    lands in ``warn``.
+    分析策略保守：已知安全命令白名单，已知危险模式拦截，
+    其余全部进入 warn 等级。
     """
     cmd = command.strip()
     if not cmd:
         return BashRiskLevel.safe, ""
 
-    # 1. Check dangerous patterns first (highest priority)
+    # 1. 优先检查危险模式
     for pattern, reason in _DANGEROUS:
         if pattern.search(cmd):
             return BashRiskLevel.dangerous, reason
 
-    # 2. Check safe prefixes
+    # 2. 检查安全前缀
     cmd_lower = cmd.lower()
     for prefix in _SAFE_PREFIXES:
         if cmd_lower.startswith(prefix.lower()):
-            # Extra guard: safe prefix followed by a pipe into a shell?
+            # 额外防护：安全命令后管道到 shell 仍判定为危险
             if re.search(r'\|\s*(bash|sh|zsh|fish)\b', cmd, re.IGNORECASE):
-                return BashRiskLevel.dangerous, "pipe to shell execution"
+                return BashRiskLevel.dangerous, "管道执行shell命令"
             return BashRiskLevel.safe, ""
 
-    # 3. Check warn patterns
+    # 3. 检查警告模式
     for pattern, reason in _WARN:
         if pattern.search(cmd):
             return BashRiskLevel.warn, reason
 
-    # 4. Default: unknown command — warn
+    # 4. 默认：未知命令 → 警告
     first_word = cmd.split()[0] if cmd.split() else cmd
-    return BashRiskLevel.warn, f"unrecognised command '{first_word}'"
+    return BashRiskLevel.warn, f"未知命令 '{first_word}'"
