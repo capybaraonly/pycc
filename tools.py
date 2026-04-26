@@ -1091,6 +1091,7 @@ import task.tools as _task_tools  # noqa: F401
 
 def _enter_plan_mode(params: dict, config: dict) -> str:
     """进入计划模式：只读，除计划文件外不可写入。"""
+    from plan_mode import enter_plan_mode
     if config.get("permission_mode") == "plan":
         return "已在计划模式。将计划写入文件，然后调用 ExitPlanMode。"
 
