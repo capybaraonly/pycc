@@ -138,11 +138,14 @@ def run(
             _reminder_injected = False
 
         # 以中立格式记录助手消息
-        state.messages.append({
+        asst_msg: dict = {
             "role":       "assistant",
             "content":    response.text,
             "tool_calls": response.tool_calls,
-        })
+        }
+        if response.reasoning_content:
+            asst_msg["reasoning_content"] = response.reasoning_content
+        state.messages.append(asst_msg)
 
         state.total_input_tokens  += response.in_tokens
         state.total_output_tokens += response.out_tokens

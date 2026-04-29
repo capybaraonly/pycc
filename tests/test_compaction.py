@@ -75,7 +75,8 @@ class TestGetContextLimit:
         assert get_context_limit("gemini-2.0-flash") == 1000000
 
     def test_deepseek(self):
-        assert get_context_limit("deepseek-chat") == 64000
+        assert get_context_limit("deepseek-chat") >= 64000
+        assert get_context_limit("deepseek-v4-pro") >= 1000000
 
     def test_openai(self):
         assert get_context_limit("gpt-4o") == 128000

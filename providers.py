@@ -331,6 +331,9 @@ def messages_to_openai(messages: list, ollama_native_images: bool = False) -> li
 
         elif role == "assistant":
             msg: dict = {"role": "assistant", "content": m.get("content") or None}
+            # 回传推理模型的思维链（DeepSeek 等要求必须原样带回）
+            if m.get("reasoning_content"):
+                msg["reasoning_content"] = m["reasoning_content"]
             tcs = m.get("tool_calls", [])
             if tcs:
                 msg["tool_calls"] = []
@@ -371,11 +374,12 @@ class ThinkingChunk:
 
 class Response:
     """完成的一轮助手响应，包含文本 + 工具调用。"""
-    def __init__(self, text, tool_calls, in_tokens, out_tokens):
-        self.text        = text
-        self.tool_calls  = tool_calls   # 列表：{id, name, input}
-        self.in_tokens   = in_tokens
-        self.out_tokens  = out_tokens
+    def __init__(self, text, tool_calls, in_tokens, out_tokens, reasoning_content=""):
+        self.text              = text
+        self.tool_calls        = tool_calls   # 列表：{id, name, input}
+        self.in_tokens         = in_tokens
+        self.out_tokens        = out_tokens
+        self.reasoning_content = reasoning_content  # DeepSeek 等推理模型的思维链
 
 
 def stream_anthropic(
@@ -475,8 +479,9 @@ def stream_openai_compat(
         mt = config["max_tokens"]
         kwargs["max_tokens"] = min(mt, prov_cap) if prov_cap else mt
 
-    text          = ""
-    tool_buf: dict = {}   # 索引 → {id, name, args_str}
+    text             = ""
+    reasoning_text   = ""
+    tool_buf: dict   = {}   # 索引 → {id, name, args_str}
     in_tok = out_tok = 0
 
     stream = client.chat.completions.create(**kwargs)
@@ -490,6 +495,12 @@ def stream_openai_compat(
 
         choice = chunk.choices[0]
         delta  = choice.delta
+
+        # 捕获 DeepSeek 等推理模型的 reasoning_content（思维链）
+        rc = getattr(delta, "reasoning_content", None)
+        if rc:
+            reasoning_text += rc
+            yield ThinkingChunk(rc)
 
         if delta.content:
             text += delta.content
@@ -529,7 +540,7 @@ def stream_openai_compat(
             tc_entry["extra_content"] = v["extra_content"]
         tool_calls.append(tc_entry)
 
-    yield Response(text, tool_calls, in_tok, out_tok)
+    yield Response(text, tool_calls, in_tok, out_tok, reasoning_content=reasoning_text)
 
 
 def stream_ollama(
