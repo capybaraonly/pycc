@@ -1735,6 +1735,12 @@ def setup_readline(history_file: Path):
         readline.read_history_file(str(history_file))
     except FileNotFoundError:
         pass
+    except OSError:
+        # libedit (macOS) 无法读取含非 ASCII 字符的历史文件，清空重建
+        try:
+            history_file.write_text("", encoding="utf-8")
+        except Exception:
+            pass
     readline.set_history_length(1000)
     atexit.register(readline.write_history_file, str(history_file))
 

@@ -76,7 +76,9 @@ PROVIDERS: dict[str, dict] = {
         "base_url":   "https://dashscope.aliyuncs.com/compatible-mode/v1",
         "context_limit": 1000000,
         "models": [
-            "qwen-max", "qwen-plus", "qwen-turbo", "qwen-long",
+            "qwen-max", "qwen-max-latest",
+            "Qwen3-235B-A22B", "Qwen3-30B-A3B",
+            "qwen-plus", "qwen-turbo", "qwen-long",
             "qwen2.5-72b-instruct", "qwen2.5-coder-32b-instruct",
             "qwq-32b",
         ],
@@ -95,8 +97,9 @@ PROVIDERS: dict[str, dict] = {
         "type":       "openai",
         "api_key_env": "DEEPSEEK_API_KEY",
         "base_url":   "https://api.deepseek.com/v1",
-        "context_limit": 64000,
+        "context_limit": 1000000,
         "models": [
+            "deepseek-v4-pro[1m]", "deepseek-v4-flash",
             "deepseek-chat", "deepseek-coder", "deepseek-reasoner",
         ],
     },

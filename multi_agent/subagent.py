@@ -325,6 +325,10 @@ class SubAgentManager:
         eff_config = dict(config)
         eff_system = system_prompt
 
+        # 使用 subagent_model 作为子智能体默认模型（若未被 agent_def 覆盖）
+        if config.get("subagent_model"):
+            eff_config["model"] = config["subagent_model"]
+
         if agent_def:
             if agent_def.model:
                 eff_config["model"] = agent_def.model

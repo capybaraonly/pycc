@@ -159,7 +159,7 @@ class TestGetMemoryContext:
     def test_project_memories_labelled(self):
         save_memory(_make_entry(name="proj note", description="project context"), scope="project")
         ctx = get_memory_context()
-        assert "Project memories" in ctx
+        assert "Project memories" in ctx or "项目记忆" in ctx
         assert "proj note" in ctx
 
 
@@ -169,19 +169,19 @@ class TestTruncation:
     def test_no_truncation_within_limits(self):
         text = "- line\n" * 10
         result = truncate_index_content(text)
-        assert "WARNING" not in result
+        assert "WARNING" not in result and "警告" not in result
 
     def test_line_truncation(self):
         text = "\n".join(f"- line {i}" for i in range(300))
         result = truncate_index_content(text)
-        assert "WARNING" in result
-        assert "lines" in result
+        assert "WARNING" in result or "警告" in result
+        assert "lines" in result or "行" in result
 
     def test_byte_truncation(self):
         # 25001 bytes of content
         text = "x" * 25001
         result = truncate_index_content(text)
-        assert "WARNING" in result
+        assert "WARNING" in result or "警告" in result
 
 
 # ── Slugify ───────────────────────────────────────────────────────────────

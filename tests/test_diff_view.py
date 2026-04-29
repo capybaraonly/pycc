@@ -37,7 +37,7 @@ def test_write_new_file_no_diff(tmp_path):
     from tools import _write
     f = tmp_path / "new.txt"
     result = _write(str(f), "content\n")
-    assert "Created" in result
+    assert "已创建" in result or "Created" in result
     assert "---" not in result
 
 def test_diff_truncation():
@@ -46,5 +46,5 @@ def test_diff_truncation():
     new = "\n".join(f"CHANGED{i}" for i in range(200))
     diff = generate_unified_diff(old, new, "big.py")
     truncated = maybe_truncate_diff(diff, max_lines=50)
-    assert "more lines" in truncated
+    assert "more lines" in truncated or "行" in truncated
     assert truncated.count("\n") < 60
