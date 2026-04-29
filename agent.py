@@ -52,6 +52,7 @@ class TurnDone:
 class PermissionRequest:
     description: str
     granted: bool = False
+    _config: dict = field(default_factory=dict)  # agent 内部 config 引用，用于回写 permission_mode
 
 
 # ── 智能体循环 ─────────────────────────────────────────────────────────────
@@ -188,7 +189,7 @@ def run(
                         # 计划模式：静默拒绝写入操作（无需用户确认）
                         permitted = False
                     else:
-                        req = PermissionRequest(description=_permission_desc(toolcall))
+                        req = PermissionRequest(description=_permission_desc(toolcall), _config=config)
                         yield req
                         permitted = req.granted
 

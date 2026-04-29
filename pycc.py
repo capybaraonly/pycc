@@ -1937,7 +1937,13 @@ def repl(config: dict, initial_prompt: str = None):
                             config.get("_session_id", ""),
                             config.get("_cwd", "."),
                         )
-                        event.granted = ask_permission_interactive(event.description, config)
+                        # 用 event._config（agent 内部副本）而非外层 config，
+                        # 确保按 'a' 后 accept-all 在当前 agent 循环内立即生效
+                        _perm_cfg = event._config if event._config else config
+                        event.granted = ask_permission_interactive(event.description, _perm_cfg)
+                        # 同步回外层 config，保持一致
+                        if _perm_cfg is not config:
+                            config["permission_mode"] = _perm_cfg.get("permission_mode", config.get("permission_mode"))
 
                     elif isinstance(event, ToolEnd):
                         print_tool_end(event.name, event.result, verbose)
