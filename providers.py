@@ -99,7 +99,7 @@ PROVIDERS: dict[str, dict] = {
         "base_url":   "https://api.deepseek.com/v1",
         "context_limit": 1000000,
         "models": [
-            "deepseek-v4-pro[1m]", "deepseek-v4-flash",
+            "deepseek-v4-pro", "deepseek-v4-flash",
             "deepseek-chat", "deepseek-coder", "deepseek-reasoner",
         ],
     },
