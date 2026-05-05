@@ -88,9 +88,6 @@ class TestGetContextLimit:
         # Unknown models fall back to openai provider which has 128000
         assert get_context_limit("some-random-model-xyz") == 128000
 
-    def test_explicit_provider_prefix(self):
-        assert get_context_limit("ollama/llama3.3") == 128000
-
 
 # ── snip_old_messages ─────────────────────────────────────────────────────
 

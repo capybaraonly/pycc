@@ -14,7 +14,7 @@ SESSION_HIST_FILE = SESSIONS_DIR / "history.json" # master: all sessions ever
 MR_SESSION_DIR = SESSIONS_DIR / "mr_sessions"
 
 DEFAULTS = {
-    "model":            "ollama/gemma4:e4b",
+    "model":            "deepseek/deepseek-v4-pro",
     "max_tokens":       40000,
     "permission_mode":  "auto",   # auto | accept-all | manual
     "verbose":          False,

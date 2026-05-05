@@ -372,7 +372,7 @@ def cmd_model(args: str, _state, config) -> bool:
                 info(f"  {pn:12s}  " + ", ".join(ms[:4]) + ("..." if len(ms) > 4 else ""))
         info("\n格式: '提供商/模型' 或直接输入模型名(自动检测)")
         info("  例如: /model gpt-4o")
-        info("  例如: /model ollama/qwen2.5-coder")
+        info("  例如: /model deepseek/deepseek-v4-pro")
         info("  例如: /model kimi:moonshot-v1-32k")
     else:
         # 兼容两种语法格式
@@ -1493,13 +1493,11 @@ def cmd_doctor(args: str, state, config) -> bool:
 
     if key:
         ok(f"{provider} 的 API 密钥: 已设置 ({key[:4]}...{key[-4:]})")
-    elif provider in ("ollama", "lmstudio"):
-        ok(f"提供商 {provider}: 无需密钥(本地部署)")
     else:
         fail(f"{provider} 的 API 密钥: 未设置")
 
     # 4. 测试 API 连接
-    if key or provider in ("ollama", "lmstudio"):
+    if key:
         print(f"  ... 正在测试 {provider} API 连接...")
         try:
             import urllib.request, urllib.error
@@ -1534,14 +1532,6 @@ def cmd_doctor(args: str, state, config) -> bool:
                         warn(f"Anthropic API: HTTP {e.code}")
                 except Exception as e:
                     fail(f"Anthropic API: 连接错误 — {e}")
-
-            elif ptype == "ollama":
-                base = prov.get("base_url", "http://localhost:11434")
-                try:
-                    urllib.request.urlopen(f"{base}/api/tags", timeout=5)
-                    ok(f"Ollama: 可访问 {base}")
-                except Exception:
-                    fail(f"Ollama: 无法连接 {base} — Ollama 是否运行？")
 
             else:
                 base = prov.get("base_url", "")
@@ -1972,14 +1962,6 @@ def repl(config: dict, initial_prompt: str = None):
                 raise
             except Exception as e:
                 _stop_tool_spinner()
-                import urllib.error
-                # 捕获 Ollama 模型不存在的 404 错误
-                if isinstance(e, urllib.error.HTTPError) and e.code == 404:
-                    from providers import detect_provider
-                    if detect_provider(config["model"]) == "ollama":
-                        flush_response()
-                        err(f"未找到 Ollama 模型 '{config['model']}'。")
-                        return
                 raise e
 
             _stop_tool_spinner()

@@ -10,14 +10,11 @@ pycc 的多厂商支持模块。
   zhipu      — 智谱 GLM（glm-4、glm-4-plus 等）
   deepseek   — 深度求索（deepseek-chat、deepseek-reasoner 等）
   minimax    — 迷你最大（MiniMax-Text-01、abab6.5s-chat 等）
-  ollama     — 本地 Ollama（llama3.3、qwen2.5-coder 等）
-  lmstudio   — 本地 LM Studio（任意已加载模型）
   custom     — 任意兼容 OpenAI 接口的端点
 
 模型字符串格式：
   "claude-opus-4-6"          自动识别 → anthropic
   "gpt-4o"                   自动识别 → openai
-  "ollama/qwen2.5-coder"     显式指定厂商前缀
   "custom/my-model"          使用配置中的 CUSTOM_BASE_URL
 """
 from __future__ import annotations
@@ -114,25 +111,6 @@ PROVIDERS: dict[str, dict] = {
             "abab5.5s-chat", "abab5.5-chat",
         ],
     },
-    "ollama": {
-        "type":       "ollama",
-        "api_key_env": None,
-        "base_url":   "http://localhost:11434",
-        "api_key":    "ollama",
-        "context_limit": 128000,
-        "models": [
-            "llama3.3", "llama3.2", "phi4", "mistral", "mixtral",
-            "qwen2.5-coder", "deepseek-r1", "gemma3",
-        ],
-    },
-    "lmstudio": {
-        "type":       "openai",
-        "api_key_env": None,
-        "base_url":   "http://localhost:1234/v1",
-        "api_key":    "lm-studio",
-        "context_limit": 128000,
-        "models": [],   # 动态，取决于加载的模型
-    },
     "custom": {
         "type":       "openai",
         "api_key_env": "CUSTOM_API_KEY",
@@ -182,10 +160,6 @@ _PREFIXES = [
     ("minimax-",      "minimax"),
     ("MiniMax-",      "minimax"),
     ("abab",          "minimax"),
-    ("llama",         "ollama"),
-    ("mistral",       "ollama"),
-    ("phi",           "ollama"),
-    ("gemma",         "ollama"),
 ]
 
 
@@ -297,26 +271,15 @@ def messages_to_anthropic(messages: list) -> list:
     return result
 
 
-def messages_to_openai(messages: list, ollama_native_images: bool = False) -> list:
-    """将统一消息格式 → 转换为 OpenAI API 格式。
-
-    参数：
-        ollama_native_images: 如果为 True，直接在用户消息中传递 'images' 列表
-                              使用 Ollama 原生格式（消息对象上的 base64 列表）。
-                              仅在目标为 Ollama 后端时设置。
-                              如果为 False（默认），图片会转换为 OpenAI/Gemini
-                              的 multipart ``image_url`` 格式，确保视觉模型正常识别。
-    """
+def messages_to_openai(messages: list) -> list:
+    """将统一消息格式 → 转换为 OpenAI API 格式。"""
     result = []
     for m in messages:
         role = m["role"]
 
         if role == "user":
             content = m["content"]
-            if ollama_native_images and m.get("images"):
-                # Ollama 原生格式：消息上直接带 base64 图片列表
-                msg_out = {"role": "user", "content": content, "images": m["images"]}
-            elif not ollama_native_images and m.get("images"):
+            if m.get("images"):
                 # OpenAI / Gemini 视觉格式
                 parts = [{"type": "text", "text": content}]
                 for img_b64 in m["images"]:
@@ -461,14 +424,6 @@ def stream_openai_compat(
         "stream":   True,
     }
 
-    # 仅为已知的 Ollama/LM Studio 端口传递 num_ctx，避免匹配其他本地服务
-    _is_local_ollama = "11434" in base_url
-    _is_lmstudio     = "1234" in base_url and ("lmstudio" in base_url or "localhost" in base_url or "127.0.0.1" in base_url)
-    if _is_local_ollama or _is_lmstudio:
-        prov = detect_provider(model)
-        ctx_limit = PROVIDERS.get(prov if prov in ("ollama", "lmstudio") else "ollama", {}).get("context_limit", 128000)
-        kwargs["extra_body"] = {"options": {"num_ctx": ctx_limit}}
-
     if tool_schemas and not config.get("no_tools"):
         kwargs["tools"] = tools_to_openai(tool_schemas)
         # "auto" 需要 vLLM 开启 --enable-auto-tool-choice，服务器不支持则省略
@@ -543,108 +498,6 @@ def stream_openai_compat(
     yield Response(text, tool_calls, in_tok, out_tok, reasoning_content=reasoning_text)
 
 
-def stream_ollama(
-    base_url: str,
-    model: str,
-    system: str,
-    messages: list,
-    tool_schemas: list,
-    config: dict,
-) -> Generator:
-    # pass_images=True：Ollama /api/chat 原生支持消息中的 base64 图片
-    oai_messages = [{"role": "system", "content": system}] + messages_to_openai(messages, ollama_native_images=True)
-    
-    # Ollama 要求工具参数为字典，而非字符串；OpenAI 使用字符串
-    for m in oai_messages:
-        if m.get("content") is None:
-            m["content"] = ""
-        if "tool_calls" in m and m["tool_calls"]:
-            for tc in m["tool_calls"]:
-                fn = tc.get("function", {})
-                if isinstance(fn.get("arguments"), str):
-                    try:
-                        fn["arguments"] = json.loads(fn["arguments"])
-                    except Exception:
-                        pass
-    
-    payload = {
-        "model": model,
-        "messages": oai_messages,
-        "stream": True,
-        "options": {
-            "num_ctx": config.get("context_limit", 128000)
-        }
-    }
-    
-    if tool_schemas and not config.get("no_tools"):
-        payload["tools"] = tools_to_openai(tool_schemas)
-
-    def _make_request(p):
-        return urllib.request.Request(
-            f"{base_url.rstrip('/')}/api/chat",
-            data=json.dumps(p).encode("utf-8"),
-            headers={"Content-Type": "application/json"}
-        )
-
-    req = _make_request(payload)
-
-    text = ""
-    tool_buf: dict = {}
-
-    try:
-        resp_cm = urllib.request.urlopen(req)
-    except urllib.error.HTTPError as e:
-        if e.code == 500 and "tools" in payload:
-            # 模型不支持工具调用 → 不带工具重试
-            print(
-                f"\n\033[33m[警告] {model} 返回 HTTP 500（可能不支持工具调用）。"
-                " 正在不带工具重试。\033[0m"
-            )
-            payload.pop("tools", None)
-            req = _make_request(payload)
-            resp_cm = urllib.request.urlopen(req)
-        else:
-            raise
-
-    with resp_cm as resp:
-        for line in resp:
-            if not line.strip(): continue
-            try:
-                data = json.loads(line)
-            except Exception:
-                continue
-            
-            msg = data.get("message", {})
-            
-            # Ollama 原生推理模型会在这里流式输出思考过程
-            if "thinking" in msg and msg["thinking"]:
-                yield ThinkingChunk(msg["thinking"])
-                
-            if "content" in msg and msg["content"]:
-                text += msg["content"]
-                yield TextChunk(msg["content"])
-            
-            # 处理原生 Ollama 工具格式（与 OpenAI 一致）
-            for tc in msg.get("tool_calls", []):
-                fn = tc.get("function", {})
-                idx = len(tool_buf) # Ollama 发送完整工具调用，而非增量
-                tool_buf[idx] = {
-                    "id": "call_ollama" + str(idx),
-                    "name": fn.get("name", ""),
-                    "args": json.dumps(fn.get("arguments", {})),
-                    "input": fn.get("arguments", {})
-                }
-
-    tool_calls = []
-    for idx in sorted(tool_buf):
-        v = tool_buf[idx]
-        tool_calls.append({"id": v["id"], "name": v["name"], "input": v["input"]})
-
-    # Ollama 直播流不易直接返回精确 token 数，直到 "done"，
-    # 但可以粗略估算或返回 0，pycc 能优雅处理 0
-    yield Response(text, tool_calls, 0, 0)
-
-
 def stream(
     model: str,
     system: str,
@@ -664,9 +517,6 @@ def stream(
 
     if prov["type"] == "anthropic":
         yield from stream_anthropic(api_key, model_name, system, messages, tool_schemas, config)
-    elif prov["type"] == "ollama":
-        base_url = prov.get("base_url", "http://localhost:11434")
-        yield from stream_ollama(base_url, model_name, system, messages, tool_schemas, config)
     else:
         import os as _os
         if provider_name == "custom":
@@ -684,13 +534,3 @@ def stream(
         )
 
 
-def list_ollama_models(base_url: str) -> list[str]:
-    """从 Ollama 服务器获取本地可用模型列表。"""
-    try:
-        url = f"{base_url.rstrip('/')}/api/tags"
-        with urllib.request.urlopen(url, timeout=3) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            # Ollama 返回格式：{"models": [{"name": "llama3:latest", ...}, ...]}
-            return [m["name"] for m in data.get("models", [])]
-    except Exception:
-        return []

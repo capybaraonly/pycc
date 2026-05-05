@@ -16,7 +16,7 @@ python pycc.py                 # 启动 REPL
 
 | 功能 | 说明 |
 |---|---|
-| 多厂商支持 | Anthropic · OpenAI · Gemini · Kimi · Qwen · 智谱 · DeepSeek · MiniMax · Ollama · LM Studio · 自定义端点 |
+| 多厂商支持 | Anthropic · OpenAI · Gemini · Kimi · Qwen · 智谱 · DeepSeek · MiniMax · 自定义端点 |
 | 交互式 REPL | readline 历史记录，Tab 补全斜杠命令及子命令提示；Bracketed Paste 模式支持可靠的多行粘贴 |
 | 智能体循环 | 流式 API + 自动工具调用循环 |
 | 27 个内置工具 | Read · Write · Edit · Bash · Glob · Grep · WebFetch · WebSearch · **NotebookEdit** · **GetDiagnostics** · MemorySave · MemoryDelete · MemorySearch · MemoryList · Agent · SendMessage · CheckAgentResult · ListAgentTasks · ListAgentTypes · Skill · SkillList · AskUserQuestion · TaskCreate/Update/Get/List · **SleepTimer** · **EnterPlanMode** · **ExitPlanMode** · *（MCP 工具在启动时自动注册）* |
@@ -35,7 +35,7 @@ python pycc.py                 # 启动 REPL
 | Rich 流式渲染 | 安装 `rich` 后，响应以实时更新的 Markdown 原地渲染 |
 | 上下文注入 | 自动加载 `CLAUDE.md`、git 状态、当前目录、持久记忆 |
 | 会话持久化 | 退出时自动保存到 `daily/YYYY-MM-DD/` + `history.json` + `session_latest.json` |
-| Extended Thinking | Claude 模型可开/关；本地 Ollama 推理模型（deepseek-r1、qwen3、gemma4）支持原生 `<think>` 块流式输出 |
+| Extended Thinking | Claude 模型可开/关 |
 | 费用追踪 | Token 用量 + 估算 USD 费用 |
 | 非交互模式 | `--print` 标志用于脚本/CI |
 
@@ -73,28 +73,6 @@ python pycc.py                 # 启动 REPL
 | **MiniMax** | `MiniMax-VL-01` | 1M | 视觉 + 语言 | `MINIMAX_API_KEY` |
 | **MiniMax** | `abab6.5s-chat` | 256k | 快速，成本低 | `MINIMAX_API_KEY` |
 | **MiniMax** | `abab6.5-chat` | 256k | 质量均衡 | `MINIMAX_API_KEY` |
-
-### 开源模型（本地，通过 Ollama）
-
-| 模型 | 参数量 | 优势 | 拉取命令 |
-|---|---|---|---|
-| `llama3.3` | 70B | 通用，推理强 | `ollama pull llama3.3` |
-| `llama3.2` | 3B / 11B | 轻量 | `ollama pull llama3.2` |
-| `qwen2.5-coder` | 7B / 32B | **编码任务首选** | `ollama pull qwen2.5-coder` |
-| `qwen2.5` | 7B / 72B | 中英双语 | `ollama pull qwen2.5` |
-| `deepseek-r1` | 7B–70B | 推理，数学 | `ollama pull deepseek-r1` |
-| `deepseek-coder-v2` | 16B | 编码 | `ollama pull deepseek-coder-v2` |
-| `mistral` | 7B | 快速，高效 | `ollama pull mistral` |
-| `mixtral` | 8x7B | 强 MoE 模型 | `ollama pull mixtral` |
-| `phi4` | 14B | 微软出品，推理强 | `ollama pull phi4` |
-| `gemma3` | 4B / 12B / 27B | Google 开源模型 | `ollama pull gemma3` |
-| `codellama` | 7B / 34B | 代码生成 | `ollama pull codellama` |
-| `llava` | 7B / 13B | **视觉** — 图像理解 | `ollama pull llava` |
-| `llama3.2-vision` | 11B | **视觉** — 多模态推理 | `ollama pull llama3.2-vision` |
-
-> **注意：** 工具调用需要模型支持 function calling。推荐本地模型：`qwen2.5-coder`、`llama3.3`、`mistral`、`phi4`。
-
-> **推理模型：** `deepseek-r1`、`qwen3`、`gemma4` 支持原生 `<think>` 块流式输出。开启 `/verbose` 和 `/thinking` 可在终端看到思考过程。注意：接收大型系统提示（如 pycc 的 25 个工具 schema）的模型可能会压缩思考阶段以避免破坏预期的 JSON 格式——这是模型行为，不是 bug。
 
 ---
 
@@ -249,101 +227,7 @@ pycc --model minimax/abab6.5s-chat
 
 ---
 
-## 用法：开源本地模型
-
-### 方案 A — Ollama（推荐）
-
-Ollama 零配置本地运行模型，无需 API Key。
-
-**第一步：安装 Ollama**
-
-```bash
-# macOS / Linux
-curl -fsSL https://ollama.com/install.sh | sh
-
-# 或从 https://ollama.com/download 下载
-```
-
-**第二步：拉取模型**
-
-```bash
-# 编码首选
-ollama pull qwen2.5-coder          # 4.7 GB（7B）
-ollama pull qwen2.5-coder:32b      # 19 GB（32B）
-
-# 通用
-ollama pull llama3.3               # 42 GB（70B）
-ollama pull llama3.2               # 2.0 GB（3B）
-
-# 推理
-ollama pull deepseek-r1            # 4.7 GB（7B）
-ollama pull deepseek-r1:32b        # 19 GB（32B）
-
-# 其他
-ollama pull phi4                   # 9.1 GB（14B）
-ollama pull mistral                # 4.1 GB（7B）
-```
-
-**第三步：启动 Ollama 服务**（macOS 自动启动；Linux 需手动运行）
-
-```bash
-ollama serve     # 监听 http://localhost:11434
-```
-
-**第四步：运行 pycc**
-
-```bash
-pycc --model ollama/qwen2.5-coder
-pycc --model ollama/llama3.3
-pycc --model ollama/deepseek-r1
-```
-
-或：
-
-```bash
-python pycc.py --model ollama/qwen2.5-coder
-python pycc.py --model ollama/llama3.3
-python pycc.py --model ollama/deepseek-r1
-```
-
-**列出本地已有模型：**
-
-```bash
-ollama list
-```
-
-然后使用列表中的任意模型：
-
-```bash
-pycc --model ollama/<model-name>
-```
-
----
-
-### 方案 B — LM Studio
-
-LM Studio 提供图形界面下载和运行模型，内置 OpenAI 兼容服务器。
-
-**第一步：** 下载并安装 [LM Studio](https://lmstudio.ai)。
-
-**第二步：** 在 LM Studio 内搜索并下载模型（GGUF 格式）。
-
-**第三步：** 进入 **Local Server** 标签页 → 点击 **Start Server**（默认端口：1234）。
-
-**第四步：**
-
-```bash
-pycc --model lmstudio/<model-name>
-# 例如：
-pycc --model lmstudio/phi-4-GGUF
-pycc --model lmstudio/qwen2.5-coder-7b
-```
-
-模型名称应与 LM Studio 服务器状态栏显示的一致。
-
----
-
-### 方案 C — vLLM / 自建 OpenAI 兼容服务器
+## 用法：自建推理服务器
 
 适用于自建推理服务器（vLLM、TGI、llama.cpp server 等）暴露 OpenAI 兼容 API 的情况：
 
@@ -394,7 +278,7 @@ pycc --model gemini-2.0-flash
 pycc --model deepseek-chat
 
 # 2. 斜杠显式指定厂商前缀
-pycc --model ollama/qwen2.5-coder
+pycc --model deepseek/deepseek-v4-pro
 pycc --model kimi/moonshot-v1-128k
 
 # 3. 冒号显式指定厂商前缀（同样有效）
@@ -414,7 +298,6 @@ pycc --model qwen:qwen-max
 | `glm-` | zhipu |
 | `deepseek-` | deepseek |
 | `MiniMax-`、`minimax-`、`abab` | minimax |
-| `llama`、`mistral`、`phi`、`gemma`、`mixtral`、`codellama` | ollama |
 
 ---
 
@@ -426,7 +309,7 @@ pycc [OPTIONS] [PROMPT]
 
 Options:
   -p, --print          非交互模式：运行提示词后退出
-  -m, --model MODEL    覆盖模型（如 gpt-4o、ollama/llama3.3）
+  -m, --model MODEL    覆盖模型（如 gpt-4o、deepseek/deepseek-v4-pro）
   --accept-all         自动批准所有操作（无权限提示）
   --verbose            显示思考块和每轮 token 数量
   --thinking           开启 Extended Thinking（仅 Claude）
@@ -442,7 +325,7 @@ pycc
 
 # 启动时切换模型
 pycc --model gpt-4o
-pycc -m ollama/deepseek-r1:32b
+pycc -m deepseek/deepseek-v4-pro
 
 # 非交互 / 脚本
 pycc --print "Write a Python fibonacci function"
@@ -514,19 +397,20 @@ pycc --thinking --verbose
 
 ```
 [myproject] ❯ /model
-  当前模型：claude-opus-4-6  (厂商: anthropic)
+  当前模型：deepseek/deepseek-v4-pro  (厂商: deepseek)
 
   按厂商列出的可用模型：
     anthropic     claude-opus-4-6, claude-sonnet-4-6, ...
     openai        gpt-4o, gpt-4o-mini, o3-mini, ...
-    ollama        llama3.3, llama3.2, phi4, mistral, ...
+    deepseek      deepseek-v4-pro, deepseek-v4-flash, deepseek-chat, ...
+    qwen          qwen-max, qwen-plus, ...
     ...
 
 [myproject] ❯ /model gpt-4o
   模型已切换为 gpt-4o  (厂商: openai)
 
-[myproject] ❯ /model ollama/qwen2.5-coder
-  模型已切换为 ollama/qwen2.5-coder  (厂商: ollama)
+[myproject] ❯ /model qwen/qwen-max
+  模型已切换为 qwen/qwen-max  (厂商: qwen)
 ```
 
 ---
@@ -1146,10 +1030,6 @@ pycc/
 ```
 
 或在项目中创建 `.mcp.json`，然后运行 `/mcp reload`。
-
-**Q：本地 Ollama 模型无法调用工具。**
-
-使用支持 function calling 的模型：`qwen2.5-coder`、`llama3.3`、`mistral` 或 `phi4`。
 
 **Q：如何连接到运行 vLLM 的远程 GPU 服务器？**
 
