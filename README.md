@@ -1,147 +1,143 @@
 # pycc
 
-**pycc** is a lightweight, hackable Python implementation of an AI coding assistant, inspired by Claude Code. It runs a streaming agent loop with tool use, supports 10+ model providers out of the box, and exposes a clean REPL you can extend with custom skills and MCP servers.
+**pycc** 是一个轻量、可自由扩展的 Python AI 编程助手，灵感来自 Claude Code。它运行一个带工具调用的流式智能体循环，开箱支持 10+ 个模型厂商，并提供简洁的 REPL，可通过自定义技能（Skill）和 MCP 服务器随意扩展。
 
 ```bash
-pip install anthropic          # or openai, or any supported provider SDK
+pip install anthropic          # 或 openai，或任意支持的厂商 SDK
 export ANTHROPIC_API_KEY=...
-python pycc.py                 # start the REPL
+python pycc.py                 # 启动 REPL
 ```
 
-Requires Python ≥ 3.10.
+要求 Python ≥ 3.10。
 
 ---
 
-## Features
+## 功能特性
 
-| Feature | Details |
+| 功能 | 说明 |
 |---|---|
-| Multi-provider | Anthropic · OpenAI · Gemini · Kimi · Qwen · Zhipu · DeepSeek · MiniMax · Ollama · LM Studio · Custom endpoint |
-| Interactive REPL | readline history, Tab-complete slash commands with descriptions + subcommand hints; Bracketed Paste Mode for reliable multi-line paste |
-| Agent loop | Streaming API + automatic tool-use loop |
-| 27 built-in tools | Read · Write · Edit · Bash · Glob · Grep · WebFetch · WebSearch · **NotebookEdit** · **GetDiagnostics** · MemorySave · MemoryDelete · MemorySearch · MemoryList · Agent · SendMessage · CheckAgentResult · ListAgentTasks · ListAgentTypes · Skill · SkillList · AskUserQuestion · TaskCreate/Update/Get/List · **SleepTimer** · **EnterPlanMode** · **ExitPlanMode** · *(MCP tools auto-added at startup)* |
-| MCP integration | Connect any MCP server (stdio/SSE/HTTP), tools auto-registered and callable by Claude |
-| AskUserQuestion | Claude can pause and ask the user a clarifying question mid-task, with optional numbered choices |
-| Task management | TaskCreate/Update/Get/List tools; sequential IDs; metadata; persisted to `.pycc/tasks.json`; `/tasks` REPL command |
-| Diff view | Git-style red/green diff display for Edit and Write |
-| Context compression | Auto-compact long conversations to stay within model limits |
-| Persistent memory | Dual-scope memory (user + project) with 4 types, confidence/source metadata, conflict detection, recency-weighted search, `last_used_at` tracking, and `/memory consolidate` for auto-extraction |
-| Multi-agent | Spawn typed sub-agents (coder/reviewer/researcher/…), git worktree isolation, background mode |
-| Skills | Built-in `/commit` · `/review` + custom markdown skills with argument substitution and fork/inline execution |
-| Permission system | `auto` / `accept-all` / `manual` / `plan` modes |
-| Plan mode | `/plan <desc>` enters read-only analysis mode; Claude writes only to the plan file; `EnterPlanMode` / `ExitPlanMode` agent tools for autonomous planning |
-| Vision input | `/image` (or `/img`) captures the clipboard image and sends it to any vision-capable model — Ollama (`llava`, `gemma4`, `llama3.2-vision`) via native format, or cloud models (GPT-4o, Gemini 2.0 Flash, …) via OpenAI `image_url` multipart format. Requires `pip install pycc[vision]`; Linux also needs `xclip`. |
-| Force quit | 3× Ctrl+C within 2 seconds triggers `os._exit(1)` — kills the process immediately regardless of blocking I/O |
-| Rich Live streaming | When `rich` is installed, responses render as live-updating Markdown in place. Auto-disabled in SSH sessions to prevent repeated output; override with `/config rich_live=false`. |
-| Context injection | Auto-loads `CLAUDE.md`, git status, cwd, persistent memory |
-| Session persistence | Autosave on exit to `daily/YYYY-MM-DD/` (per-day limit) + `history.json` (master, all sessions) + `session_latest.json` (/resume); sessions include `session_id` and `saved_at` metadata; `/load` grouped by date |
-| Extended Thinking | Toggle on/off for Claude models; native `<think>` block streaming for local Ollama reasoning models (deepseek-r1, qwen3, gemma4) |
-| Cost tracking | Token usage + estimated USD cost |
-| Non-interactive mode | `--print` flag for scripting / CI |
+| 多厂商支持 | Anthropic · OpenAI · Gemini · Kimi · Qwen · 智谱 · DeepSeek · MiniMax · Ollama · LM Studio · 自定义端点 |
+| 交互式 REPL | readline 历史记录，Tab 补全斜杠命令及子命令提示；Bracketed Paste 模式支持可靠的多行粘贴 |
+| 智能体循环 | 流式 API + 自动工具调用循环 |
+| 27 个内置工具 | Read · Write · Edit · Bash · Glob · Grep · WebFetch · WebSearch · **NotebookEdit** · **GetDiagnostics** · MemorySave · MemoryDelete · MemorySearch · MemoryList · Agent · SendMessage · CheckAgentResult · ListAgentTasks · ListAgentTypes · Skill · SkillList · AskUserQuestion · TaskCreate/Update/Get/List · **SleepTimer** · **EnterPlanMode** · **ExitPlanMode** · *（MCP 工具在启动时自动注册）* |
+| MCP 集成 | 接入任意 MCP 服务器（stdio/SSE/HTTP），工具自动注册，Claude 可直接调用 |
+| AskUserQuestion | Claude 可在任务中途暂停并向用户提问，支持编号选项 |
+| 任务管理 | TaskCreate/Update/Get/List 工具；顺序 ID；元数据；持久化至 `.pycc/tasks.json`；`/tasks` REPL 命令 |
+| 差异视图 | Edit 和 Write 操作后显示 git 风格的红绿差异 |
+| 上下文压缩 | 自动压缩长对话以保持在模型上下文限制内 |
+| 持久记忆 | 双作用域记忆（user + project），4 种类型，置信度/来源元数据，冲突检测，按使用频率加权搜索，`last_used_at` 追踪，以及 `/memory consolidate` 自动提炼 |
+| 多智能体 | 派发类型化子智能体（coder/reviewer/researcher/…），git worktree 隔离，后台模式 |
+| 技能系统 | 内置 `/commit` · `/review` + 支持参数替换的自定义 Markdown 技能 |
+| 权限系统 | `auto` / `accept-all` / `manual` / `plan` 四种模式 |
+| 计划模式 | `/plan <描述>` 进入只读分析模式；Claude 仅写入计划文件；`EnterPlanMode` / `ExitPlanMode` 工具支持自主规划 |
+| 视觉输入 | `/image`（或 `/img`）截取剪贴板图片并发送给任意视觉模型 |
+| 强制退出 | 2 秒内连按 3 次 Ctrl+C 触发 `os._exit(1)`，立即终止进程 |
+| Rich 流式渲染 | 安装 `rich` 后，响应以实时更新的 Markdown 原地渲染 |
+| 上下文注入 | 自动加载 `CLAUDE.md`、git 状态、当前目录、持久记忆 |
+| 会话持久化 | 退出时自动保存到 `daily/YYYY-MM-DD/` + `history.json` + `session_latest.json` |
+| Extended Thinking | Claude 模型可开/关；本地 Ollama 推理模型（deepseek-r1、qwen3、gemma4）支持原生 `<think>` 块流式输出 |
+| 费用追踪 | Token 用量 + 估算 USD 费用 |
+| 非交互模式 | `--print` 标志用于脚本/CI |
 
 ---
 
-## Supported Models
+## 支持的模型
 
-### Closed-Source (API)
+### 闭源模型（API）
 
-| Provider | Model | Context | Strengths | API Key Env |
+| 厂商 | 模型 | 上下文 | 优势 | API Key 环境变量 |
 |---|---|---|---|---|
-| **Anthropic** | `claude-opus-4-6` | 200k | Most capable, best for complex reasoning | `ANTHROPIC_API_KEY` |
-| **Anthropic** | `claude-sonnet-4-6` | 200k | Balanced speed & quality | `ANTHROPIC_API_KEY` |
-| **Anthropic** | `claude-haiku-4-5-20251001` | 200k | Fast, cost-efficient | `ANTHROPIC_API_KEY` |
-| **OpenAI** | `gpt-4o` | 128k | Strong multimodal & coding | `OPENAI_API_KEY` |
-| **OpenAI** | `gpt-4o-mini` | 128k | Fast, cheap | `OPENAI_API_KEY` |
-| **OpenAI** | `o3-mini` | 200k | Strong reasoning | `OPENAI_API_KEY` |
-| **OpenAI** | `o1` | 200k | Advanced reasoning | `OPENAI_API_KEY` |
-| **Google** | `gemini-2.5-pro-preview-03-25` | 1M | Long context, multimodal | `GEMINI_API_KEY` |
-| **Google** | `gemini-2.0-flash` | 1M | Fast, large context | `GEMINI_API_KEY` |
-| **Google** | `gemini-1.5-pro` | 2M | Largest context window | `GEMINI_API_KEY` |
-| **Moonshot (Kimi)** | `moonshot-v1-8k` | 8k | Chinese & English | `MOONSHOT_API_KEY` |
-| **Moonshot (Kimi)** | `moonshot-v1-32k` | 32k | Chinese & English | `MOONSHOT_API_KEY` |
-| **Moonshot (Kimi)** | `moonshot-v1-128k` | 128k | Long context | `MOONSHOT_API_KEY` |
-| **Alibaba (Qwen)** | `qwen-max` | 32k | Best Qwen quality | `DASHSCOPE_API_KEY` |
-| **Alibaba (Qwen)** | `qwen-plus` | 128k | Balanced | `DASHSCOPE_API_KEY` |
-| **Alibaba (Qwen)** | `qwen-turbo` | 1M | Fast, cheap | `DASHSCOPE_API_KEY` |
-| **Alibaba (Qwen)** | `qwq-32b` | 32k | Strong reasoning | `DASHSCOPE_API_KEY` |
-| **Zhipu (GLM)** | `glm-4-plus` | 128k | Best GLM quality | `ZHIPU_API_KEY` |
-| **Zhipu (GLM)** | `glm-4` | 128k | General purpose | `ZHIPU_API_KEY` |
-| **Zhipu (GLM)** | `glm-4-flash` | 128k | Free tier available | `ZHIPU_API_KEY` |
-| **DeepSeek** | `deepseek-chat` | 64k | Strong coding | `DEEPSEEK_API_KEY` |
-| **DeepSeek** | `deepseek-reasoner` | 64k | Chain-of-thought reasoning | `DEEPSEEK_API_KEY` |
-| **MiniMax** | `MiniMax-Text-01` | 1M | Long context, strong reasoning | `MINIMAX_API_KEY` |
-| **MiniMax** | `MiniMax-VL-01` | 1M | Vision + language | `MINIMAX_API_KEY` |
-| **MiniMax** | `abab6.5s-chat` | 256k | Fast, cost-efficient | `MINIMAX_API_KEY` |
-| **MiniMax** | `abab6.5-chat` | 256k | Balanced quality | `MINIMAX_API_KEY` |
+| **Anthropic** | `claude-opus-4-6` | 200k | 最强，复杂推理首选 | `ANTHROPIC_API_KEY` |
+| **Anthropic** | `claude-sonnet-4-6` | 200k | 速度与质量均衡 | `ANTHROPIC_API_KEY` |
+| **Anthropic** | `claude-haiku-4-5-20251001` | 200k | 快速，成本低 | `ANTHROPIC_API_KEY` |
+| **OpenAI** | `gpt-4o` | 128k | 多模态与编码能力强 | `OPENAI_API_KEY` |
+| **OpenAI** | `gpt-4o-mini` | 128k | 快速，廉价 | `OPENAI_API_KEY` |
+| **OpenAI** | `o3-mini` | 200k | 推理能力强 | `OPENAI_API_KEY` |
+| **OpenAI** | `o1` | 200k | 高级推理 | `OPENAI_API_KEY` |
+| **Google** | `gemini-2.5-pro-preview-03-25` | 1M | 长上下文，多模态 | `GEMINI_API_KEY` |
+| **Google** | `gemini-2.0-flash` | 1M | 快速，大上下文 | `GEMINI_API_KEY` |
+| **Google** | `gemini-1.5-pro` | 2M | 最大上下文窗口 | `GEMINI_API_KEY` |
+| **Moonshot (Kimi)** | `moonshot-v1-8k` | 8k | 中英双语 | `MOONSHOT_API_KEY` |
+| **Moonshot (Kimi)** | `moonshot-v1-32k` | 32k | 中英双语 | `MOONSHOT_API_KEY` |
+| **Moonshot (Kimi)** | `moonshot-v1-128k` | 128k | 长上下文 | `MOONSHOT_API_KEY` |
+| **阿里（Qwen）** | `qwen-max` | 32k | Qwen 最强质量 | `DASHSCOPE_API_KEY` |
+| **阿里（Qwen）** | `qwen-plus` | 128k | 均衡 | `DASHSCOPE_API_KEY` |
+| **阿里（Qwen）** | `qwen-turbo` | 1M | 快速，廉价 | `DASHSCOPE_API_KEY` |
+| **阿里（Qwen）** | `qwq-32b` | 32k | 推理能力强 | `DASHSCOPE_API_KEY` |
+| **智谱（GLM）** | `glm-4-plus` | 128k | GLM 最强质量 | `ZHIPU_API_KEY` |
+| **智谱（GLM）** | `glm-4` | 128k | 通用 | `ZHIPU_API_KEY` |
+| **智谱（GLM）** | `glm-4-flash` | 128k | 有免费额度 | `ZHIPU_API_KEY` |
+| **DeepSeek** | `deepseek-chat` | 64k | 编码能力强 | `DEEPSEEK_API_KEY` |
+| **DeepSeek** | `deepseek-reasoner` | 64k | 思维链推理 | `DEEPSEEK_API_KEY` |
+| **MiniMax** | `MiniMax-Text-01` | 1M | 长上下文，推理强 | `MINIMAX_API_KEY` |
+| **MiniMax** | `MiniMax-VL-01` | 1M | 视觉 + 语言 | `MINIMAX_API_KEY` |
+| **MiniMax** | `abab6.5s-chat` | 256k | 快速，成本低 | `MINIMAX_API_KEY` |
+| **MiniMax** | `abab6.5-chat` | 256k | 质量均衡 | `MINIMAX_API_KEY` |
 
-### Open-Source (Local via Ollama)
+### 开源模型（本地，通过 Ollama）
 
-| Model | Size | Strengths | Pull Command |
+| 模型 | 参数量 | 优势 | 拉取命令 |
 |---|---|---|---|
-| `llama3.3` | 70B | General purpose, strong reasoning | `ollama pull llama3.3` |
-| `llama3.2` | 3B / 11B | Lightweight | `ollama pull llama3.2` |
-| `qwen2.5-coder` | 7B / 32B | **Best for coding tasks** | `ollama pull qwen2.5-coder` |
-| `qwen2.5` | 7B / 72B | Chinese & English | `ollama pull qwen2.5` |
-| `deepseek-r1` | 7B–70B | Reasoning, math | `ollama pull deepseek-r1` |
-| `deepseek-coder-v2` | 16B | Coding | `ollama pull deepseek-coder-v2` |
-| `mistral` | 7B | Fast, efficient | `ollama pull mistral` |
-| `mixtral` | 8x7B | Strong MoE model | `ollama pull mixtral` |
-| `phi4` | 14B | Microsoft, strong reasoning | `ollama pull phi4` |
-| `gemma3` | 4B / 12B / 27B | Google open model | `ollama pull gemma3` |
-| `codellama` | 7B / 34B | Code generation | `ollama pull codellama` |
-| `llava` | 7B / 13B | **Vision** — image understanding | `ollama pull llava` |
-| `llama3.2-vision` | 11B | **Vision** — multimodal reasoning | `ollama pull llama3.2-vision` |
+| `llama3.3` | 70B | 通用，推理强 | `ollama pull llama3.3` |
+| `llama3.2` | 3B / 11B | 轻量 | `ollama pull llama3.2` |
+| `qwen2.5-coder` | 7B / 32B | **编码任务首选** | `ollama pull qwen2.5-coder` |
+| `qwen2.5` | 7B / 72B | 中英双语 | `ollama pull qwen2.5` |
+| `deepseek-r1` | 7B–70B | 推理，数学 | `ollama pull deepseek-r1` |
+| `deepseek-coder-v2` | 16B | 编码 | `ollama pull deepseek-coder-v2` |
+| `mistral` | 7B | 快速，高效 | `ollama pull mistral` |
+| `mixtral` | 8x7B | 强 MoE 模型 | `ollama pull mixtral` |
+| `phi4` | 14B | 微软出品，推理强 | `ollama pull phi4` |
+| `gemma3` | 4B / 12B / 27B | Google 开源模型 | `ollama pull gemma3` |
+| `codellama` | 7B / 34B | 代码生成 | `ollama pull codellama` |
+| `llava` | 7B / 13B | **视觉** — 图像理解 | `ollama pull llava` |
+| `llama3.2-vision` | 11B | **视觉** — 多模态推理 | `ollama pull llama3.2-vision` |
 
-> **Note:** Tool calling requires a model that supports function calling. Recommended local models: `qwen2.5-coder`, `llama3.3`, `mistral`, `phi4`.
+> **注意：** 工具调用需要模型支持 function calling。推荐本地模型：`qwen2.5-coder`、`llama3.3`、`mistral`、`phi4`。
 
-> **Reasoning models:** `deepseek-r1`, `qwen3`, and `gemma4` stream native `<think>` blocks. Enable with `/verbose` and `/thinking` to see thoughts in the terminal. Note: models fed a large system prompt (like pycc's 25 tool schemas) may suppress their thinking phase to avoid breaking the expected JSON format — this is model behavior, not a bug.
+> **推理模型：** `deepseek-r1`、`qwen3`、`gemma4` 支持原生 `<think>` 块流式输出。开启 `/verbose` 和 `/thinking` 可在终端看到思考过程。注意：接收大型系统提示（如 pycc 的 25 个工具 schema）的模型可能会压缩思考阶段以避免破坏预期的 JSON 格式——这是模型行为，不是 bug。
 
 ---
 
-## Installation
+## 安装
 
-### Recommended: install as a global command with `uv`
+### 推荐：使用 `uv` 安装为全局命令
 
-[uv](https://docs.astral.sh/uv/) installs `pycc` into an isolated environment and puts it on your PATH so you can run it from anywhere:
+[uv](https://docs.astral.sh/uv/) 将 `pycc` 安装到隔离环境并添加到 PATH，可在任意位置运行：
 
 ```bash
-# Install uv (if not already installed)
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Clone and install
-git clone https://github.com/SafeRL-Lab/clawspring
+# 安装
 cd pycc
 uv tool install .
 ```
 
-After that, `pycc` is available as a global command:
+安装完成后，`pycc` 即为全局命令：
 
 ```bash
-pycc                        # start REPL
-pycc --model gpt-4o         # choose a model
-pycc -p "explain this"      # non-interactive
+pycc                        # 启动 REPL
+pycc --model gpt-4o         # 选择模型
+pycc -p "explain this"      # 非交互模式
 ```
 
-To update after pulling new code:
+拉取新代码后更新：
 
 ```bash
 uv tool install . --reinstall
 ```
 
-To uninstall:
+卸载：
 
 ```bash
 uv tool uninstall pycc
 ```
 
-### Alternative: run directly from the repo
+### 备选：直接从仓库运行
 
 ```bash
 git clone https://github.com/SafeRL-Lab/clawspring
 cd pycc
 
 pip install -r requirements.txt
-# or manually:
+# 或手动安装：
 pip install anthropic openai httpx rich
 
 python pycc.py
@@ -149,29 +145,29 @@ python pycc.py
 
 ---
 
-## Usage: Closed-Source API Models
+## 用法：闭源 API 模型
 
 ### Anthropic Claude
 
-Get your API key at [console.anthropic.com](https://console.anthropic.com).
+在 [console.anthropic.com](https://console.anthropic.com) 获取 API Key。
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-api03-...
 
-# Default model (claude-opus-4-6)
+# 默认模型（claude-opus-4-6）
 pycc
 
-# Choose a specific model
+# 指定模型
 pycc --model claude-sonnet-4-6
 pycc --model claude-haiku-4-5-20251001
 
-# Enable Extended Thinking
+# 开启 Extended Thinking
 pycc --model claude-opus-4-6 --thinking --verbose
 ```
 
 ### OpenAI GPT
 
-Get your API key at [platform.openai.com](https://platform.openai.com).
+在 [platform.openai.com](https://platform.openai.com) 获取 API Key。
 
 ```bash
 export OPENAI_API_KEY=sk-...
@@ -184,7 +180,7 @@ pycc --model o3-mini
 
 ### Google Gemini
 
-Get your API key at [aistudio.google.com](https://aistudio.google.com).
+在 [aistudio.google.com](https://aistudio.google.com) 获取 API Key。
 
 ```bash
 export GEMINI_API_KEY=AIza...
@@ -194,9 +190,9 @@ pycc --model gemini/gemini-1.5-pro
 pycc --model gemini/gemini-2.5-pro-preview-03-25
 ```
 
-### Kimi (Moonshot AI)
+### Kimi（Moonshot AI）
 
-Get your API key at [platform.moonshot.cn](https://platform.moonshot.cn).
+在 [platform.moonshot.cn](https://platform.moonshot.cn) 获取 API Key。
 
 ```bash
 export MOONSHOT_API_KEY=sk-...
@@ -205,9 +201,9 @@ pycc --model kimi/moonshot-v1-32k
 pycc --model kimi/moonshot-v1-128k
 ```
 
-### Qwen (Alibaba DashScope)
+### Qwen（阿里云 DashScope）
 
-Get your API key at [dashscope.aliyun.com](https://dashscope.aliyun.com).
+在 [dashscope.aliyun.com](https://dashscope.aliyun.com) 获取 API Key。
 
 ```bash
 export DASHSCOPE_API_KEY=sk-...
@@ -217,20 +213,20 @@ pycc --model qwen/Qwen3-MAX
 pycc --model qwen/Qwen3.5-Flash
 ```
 
-### Zhipu GLM
+### 智谱 GLM
 
-Get your API key at [open.bigmodel.cn](https://open.bigmodel.cn).
+在 [open.bigmodel.cn](https://open.bigmodel.cn) 获取 API Key。
 
 ```bash
 export ZHIPU_API_KEY=...
 
 pycc --model zhipu/glm-4-plus
-pycc --model zhipu/glm-4-flash   # free tier
+pycc --model zhipu/glm-4-flash   # 免费额度
 ```
 
 ### DeepSeek
 
-Get your API key at [platform.deepseek.com](https://platform.deepseek.com).
+在 [platform.deepseek.com](https://platform.deepseek.com) 获取 API Key。
 
 ```bash
 export DEEPSEEK_API_KEY=sk-...
@@ -241,7 +237,7 @@ pycc --model deepseek/deepseek-reasoner
 
 ### MiniMax
 
-Get your API key at [platform.minimaxi.chat](https://platform.minimaxi.chat).
+在 [platform.minimaxi.chat](https://platform.minimaxi.chat) 获取 API Key。
 
 ```bash
 export MINIMAX_API_KEY=...
@@ -253,48 +249,48 @@ pycc --model minimax/abab6.5s-chat
 
 ---
 
-## Usage: Open-Source Models (Local)
+## 用法：开源本地模型
 
-### Option A — Ollama (Recommended)
+### 方案 A — Ollama（推荐）
 
-Ollama runs models locally with zero configuration. No API key required.
+Ollama 零配置本地运行模型，无需 API Key。
 
-**Step 1: Install Ollama**
+**第一步：安装 Ollama**
 
 ```bash
 # macOS / Linux
 curl -fsSL https://ollama.com/install.sh | sh
 
-# Or download from https://ollama.com/download
+# 或从 https://ollama.com/download 下载
 ```
 
-**Step 2: Pull a model**
+**第二步：拉取模型**
 
 ```bash
-# Best for coding (recommended)
-ollama pull qwen2.5-coder          # 4.7 GB (7B)
-ollama pull qwen2.5-coder:32b      # 19 GB (32B)
+# 编码首选
+ollama pull qwen2.5-coder          # 4.7 GB（7B）
+ollama pull qwen2.5-coder:32b      # 19 GB（32B）
 
-# General purpose
-ollama pull llama3.3               # 42 GB (70B)
-ollama pull llama3.2               # 2.0 GB (3B)
+# 通用
+ollama pull llama3.3               # 42 GB（70B）
+ollama pull llama3.2               # 2.0 GB（3B）
 
-# Reasoning
-ollama pull deepseek-r1            # 4.7 GB (7B)
-ollama pull deepseek-r1:32b        # 19 GB (32B)
+# 推理
+ollama pull deepseek-r1            # 4.7 GB（7B）
+ollama pull deepseek-r1:32b        # 19 GB（32B）
 
-# Other
-ollama pull phi4                   # 9.1 GB (14B)
-ollama pull mistral                # 4.1 GB (7B)
+# 其他
+ollama pull phi4                   # 9.1 GB（14B）
+ollama pull mistral                # 4.1 GB（7B）
 ```
 
-**Step 3: Start Ollama server** (runs automatically on macOS; on Linux run manually)
+**第三步：启动 Ollama 服务**（macOS 自动启动；Linux 需手动运行）
 
 ```bash
-ollama serve     # starts on http://localhost:11434
+ollama serve     # 监听 http://localhost:11434
 ```
 
-**Step 4: Run pycc**
+**第四步：运行 pycc**
 
 ```bash
 pycc --model ollama/qwen2.5-coder
@@ -302,22 +298,21 @@ pycc --model ollama/llama3.3
 pycc --model ollama/deepseek-r1
 ```
 
-Or
+或：
 
 ```bash
 python pycc.py --model ollama/qwen2.5-coder
 python pycc.py --model ollama/llama3.3
 python pycc.py --model ollama/deepseek-r1
-python pycc.py --model ollama/qwen3.5:35b
 ```
 
-**List your locally available models:**
+**列出本地已有模型：**
 
 ```bash
 ollama list
 ```
 
-Then use any model from the list:
+然后使用列表中的任意模型：
 
 ```bash
 pycc --model ollama/<model-name>
@@ -325,36 +320,36 @@ pycc --model ollama/<model-name>
 
 ---
 
-### Option B — LM Studio
+### 方案 B — LM Studio
 
-LM Studio provides a GUI to download and run models, with a built-in OpenAI-compatible server.
+LM Studio 提供图形界面下载和运行模型，内置 OpenAI 兼容服务器。
 
-**Step 1:** Download [LM Studio](https://lmstudio.ai) and install it.
+**第一步：** 下载并安装 [LM Studio](https://lmstudio.ai)。
 
-**Step 2:** Search and download a model inside LM Studio (GGUF format).
+**第二步：** 在 LM Studio 内搜索并下载模型（GGUF 格式）。
 
-**Step 3:** Go to **Local Server** tab → click **Start Server** (default port: 1234).
+**第三步：** 进入 **Local Server** 标签页 → 点击 **Start Server**（默认端口：1234）。
 
-**Step 4:**
+**第四步：**
 
 ```bash
 pycc --model lmstudio/<model-name>
-# e.g.:
+# 例如：
 pycc --model lmstudio/phi-4-GGUF
 pycc --model lmstudio/qwen2.5-coder-7b
 ```
 
-The model name should match what LM Studio shows in the server status bar.
+模型名称应与 LM Studio 服务器状态栏显示的一致。
 
 ---
 
-### Option C — vLLM / Self-Hosted OpenAI-Compatible Server
+### 方案 C — vLLM / 自建 OpenAI 兼容服务器
 
-For self-hosted inference servers (vLLM, TGI, llama.cpp server, etc.) that expose an OpenAI-compatible API:
+适用于自建推理服务器（vLLM、TGI、llama.cpp server 等）暴露 OpenAI 兼容 API 的情况：
 
-Quick Start for option C:
-Step 1: Start vllm:
- ```
+**第一步：启动 vLLM：**
+
+```
 CUDA_VISIBLE_DEVICES=7 python -m vllm.entrypoints.openai.api_server \
       --model Qwen/Qwen2.5-Coder-7B-Instruct \
       --host 0.0.0.0 \
@@ -363,43 +358,23 @@ CUDA_VISIBLE_DEVICES=7 python -m vllm.entrypoints.openai.api_server \
       --tool-call-parser hermes
 ```
 
+**第二步：启动 pycc：**
 
- Step 2: Start pycc：
 ```
-  export CUSTOM_BASE_URL=http://localhost:8000/v1
-  export CUSTOM_API_KEY=none
-  pycc --model custom/Qwen/Qwen2.5-Coder-7B-Instruct
-```
-
-
-```bash
-# Example: vLLM serving Qwen2.5-Coder-32B
-python -m vllm.entrypoints.openai.api_server \
-    --model Qwen/Qwen2.5-Coder-32B-Instruct \
-    --port 8000
-
-# Then run pycc pointing to your server:
-pycc
+export CUSTOM_BASE_URL=http://localhost:8000/v1
+export CUSTOM_API_KEY=none
+pycc --model custom/Qwen/Qwen2.5-Coder-7B-Instruct
 ```
 
-Inside the REPL:
+在 REPL 内配置：
 
 ```
 /config custom_base_url=http://localhost:8000/v1
-/config custom_api_key=token-abc123    # skip if no auth
+/config custom_api_key=token-abc123    # 无鉴权则跳过
 /model custom/Qwen2.5-Coder-32B-Instruct
 ```
 
-Or set via environment:
-
-```bash
-export CUSTOM_BASE_URL=http://localhost:8000/v1
-export CUSTOM_API_KEY=token-abc123
-
-pycc --model custom/Qwen2.5-Coder-32B-Instruct
-```
-
-For a remote GPU server:
+远程 GPU 服务器：
 
 ```bash
 /config custom_base_url=http://192.168.1.100:8000/v1
@@ -408,171 +383,171 @@ For a remote GPU server:
 
 ---
 
-## Model Name Format
+## 模型名称格式
 
-Three equivalent formats are supported:
+支持三种等价格式：
 
 ```bash
-# 1. Auto-detect by prefix (works for well-known models)
+# 1. 按前缀自动检测（适用于知名模型）
 pycc --model gpt-4o
 pycc --model gemini-2.0-flash
 pycc --model deepseek-chat
 
-# 2. Explicit provider prefix with slash
+# 2. 斜杠显式指定厂商前缀
 pycc --model ollama/qwen2.5-coder
 pycc --model kimi/moonshot-v1-128k
 
-# 3. Explicit provider prefix with colon (also works)
+# 3. 冒号显式指定厂商前缀（同样有效）
 pycc --model kimi:moonshot-v1-32k
 pycc --model qwen:qwen-max
 ```
 
-**Auto-detection rules:**
+**自动检测规则：**
 
-| Model prefix | Detected provider |
+| 模型前缀 | 检测到的厂商 |
 |---|---|
 | `claude-` | anthropic |
-| `gpt-`, `o1`, `o3` | openai |
+| `gpt-`、`o1`、`o3` | openai |
 | `gemini-` | gemini |
-| `moonshot-`, `kimi-` | kimi |
-| `qwen`, `qwq-` | qwen |
+| `moonshot-`、`kimi-` | kimi |
+| `qwen`、`qwq-` | qwen |
 | `glm-` | zhipu |
 | `deepseek-` | deepseek |
-| `MiniMax-`, `minimax-`, `abab` | minimax |
-| `llama`, `mistral`, `phi`, `gemma`, `mixtral`, `codellama` | ollama |
+| `MiniMax-`、`minimax-`、`abab` | minimax |
+| `llama`、`mistral`、`phi`、`gemma`、`mixtral`、`codellama` | ollama |
 
 ---
 
-## CLI Reference
+## CLI 参考
 
 ```
 pycc [OPTIONS] [PROMPT]
-# or: python pycc.py [OPTIONS] [PROMPT]
+# 或：python pycc.py [OPTIONS] [PROMPT]
 
 Options:
-  -p, --print          Non-interactive: run prompt and exit
-  -m, --model MODEL    Override model (e.g. gpt-4o, ollama/llama3.3)
-  --accept-all         Auto-approve all operations (no permission prompts)
-  --verbose            Show thinking blocks and per-turn token counts
-  --thinking           Enable Extended Thinking (Claude only)
-  --version            Print version and exit
-  -h, --help           Show help
+  -p, --print          非交互模式：运行提示词后退出
+  -m, --model MODEL    覆盖模型（如 gpt-4o、ollama/llama3.3）
+  --accept-all         自动批准所有操作（无权限提示）
+  --verbose            显示思考块和每轮 token 数量
+  --thinking           开启 Extended Thinking（仅 Claude）
+  --version            打印版本后退出
+  -h, --help           显示帮助
 ```
 
-**Examples:**
+**示例：**
 
 ```bash
-# Interactive REPL with default model
+# 交互式 REPL，使用默认模型
 pycc
 
-# Switch model at startup
+# 启动时切换模型
 pycc --model gpt-4o
 pycc -m ollama/deepseek-r1:32b
 
-# Non-interactive / scripting
+# 非交互 / 脚本
 pycc --print "Write a Python fibonacci function"
 pycc -p "Explain the Rust borrow checker in 3 sentences" -m gemini/gemini-2.0-flash
 
-# CI / automation (no permission prompts)
+# CI / 自动化（无权限提示）
 pycc --accept-all --print "Initialize a Python project with pyproject.toml"
 
-# Debug mode (see tokens + thinking)
+# 调试模式（显示 token + 思考过程）
 pycc --thinking --verbose
 ```
 
 ---
 
-## Slash Commands (REPL)
+## 斜杠命令（REPL）
 
-Type `/` and press **Tab** to see all commands with descriptions. Continue typing to filter, then Tab again to auto-complete. After a command name, press **Tab** again to see its subcommands (e.g. `/mcp ` → `reload`, `add`, `remove`, …).
+输入 `/` 后按 **Tab** 查看所有命令及说明。继续输入可过滤，再次 Tab 自动补全。命令名后再按 **Tab** 可查看子命令（如 `/mcp ` → `reload`、`add`、`remove`……）。
 
-| Command | Description |
+| 命令 | 说明 |
 |---|---|
-| `/help` | Show all commands |
-| `/clear` | Clear conversation history |
-| `/model` | Show current model + list all available models |
-| `/model <name>` | Switch model (takes effect immediately) |
-| `/config` | Show all current config values |
-| `/config key=value` | Set a config value (persisted to disk) |
-| `/save` | Save session (auto-named by timestamp) |
-| `/save <filename>` | Save session to named file |
-| `/load` | Interactive list grouped by date; enter number, `1,2,3` to merge, or `H` for full history |
-| `/load <filename>` | Load a saved session by filename |
-| `/resume` | Restore the last auto-saved session (`mr_sessions/session_latest.json`) |
-| `/resume <filename>` | Load a specific file from `mr_sessions/` (or absolute path) |
-| `/history` | Print full conversation history |
-| `/context` | Show message count and token estimate |
-| `/cost` | Show token usage and estimated USD cost |
-| `/verbose` | Toggle verbose mode (tokens + thinking) |
-| `/thinking` | Toggle Extended Thinking (Claude only) |
-| `/permissions` | Show current permission mode |
-| `/permissions <mode>` | Set permission mode: `auto` / `accept-all` / `manual` |
-| `/cwd` | Show current working directory |
-| `/cwd <path>` | Change working directory |
-| `/memory` | List all persistent memories |
-| `/memory <query>` | Search memories by keyword (ranked by confidence × recency) |
-| `/memory consolidate` | AI-extract up to 3 long-term insights from the current session |
-| `/skills` | List available skills |
-| `/agents` | Show sub-agent task status |
-| `/mcp` | List configured MCP servers and their tools |
-| `/mcp reload` | Reconnect all MCP servers and refresh tools |
-| `/mcp reload <name>` | Reconnect a single MCP server |
-| `/mcp add <name> <cmd> [args]` | Add a stdio MCP server to user config |
-| `/mcp remove <name>` | Remove a server from user config |
-| `/image [prompt]` | Capture clipboard image and send to vision model with optional prompt |
-| `/img [prompt]` | Alias for `/image` |
-| `/plan <description>` | Enter plan mode: read-only analysis, writes only to the plan file |
-| `/plan` | Show current plan file contents |
-| `/plan done` | Exit plan mode and restore original permissions |
-| `/plan status` | Show whether plan mode is active |
-| `/compact` | Manually compact the conversation (same as auto-compact but user-triggered) |
-| `/compact <focus>` | Compact with focus instructions (e.g. `/compact keep the auth refactor context`) |
-| `/init` | Create a `CLAUDE.md` template in the current working directory |
-| `/export` | Export the conversation as a Markdown file to `.nano_claude/exports/` |
-| `/export <filename>` | Export as Markdown or JSON (detected by `.json` extension) |
-| `/copy` | Copy the last assistant response to the clipboard |
-| `/status` | Show version, model, provider, permissions, session ID, token usage, and context % |
-| `/doctor` | Diagnose installation health: Python, git, API key, optional deps, CLAUDE.md |
-| `/exit` / `/quit` | Exit |
+| `/help` | 显示所有命令 |
+| `/clear` | 清除对话历史 |
+| `/model` | 显示当前模型 + 列出所有可用模型 |
+| `/model <name>` | 切换模型（立即生效） |
+| `/config` | 显示所有当前配置项 |
+| `/config key=value` | 设置配置项（持久化到磁盘） |
+| `/save` | 保存会话（按时间戳自动命名） |
+| `/save <filename>` | 保存会话到指定文件名 |
+| `/load` | 按日期分组的交互式列表；输入编号、`1,2,3` 合并，或 `H` 查看完整历史 |
+| `/load <filename>` | 按文件名加载已保存会话 |
+| `/resume` | 恢复最后一次自动保存的会话（`mr_sessions/session_latest.json`） |
+| `/resume <filename>` | 从 `mr_sessions/` 加载特定文件（或绝对路径） |
+| `/history` | 打印完整对话历史 |
+| `/context` | 显示消息数量和 token 估算 |
+| `/cost` | 显示 token 用量和估算 USD 费用 |
+| `/verbose` | 切换详细模式（token + 思考过程） |
+| `/thinking` | 切换 Extended Thinking（仅 Claude） |
+| `/permissions` | 显示当前权限模式 |
+| `/permissions <mode>` | 设置权限模式：`auto` / `accept-all` / `manual` |
+| `/cwd` | 显示当前工作目录 |
+| `/cwd <path>` | 更改工作目录 |
+| `/memory` | 列出所有持久记忆 |
+| `/memory <query>` | 按关键词搜索记忆（按置信度 × 近期度排序） |
+| `/memory consolidate` | AI 从当前会话中提炼最多 3 条长期洞察 |
+| `/skills` | 列出可用技能 |
+| `/agents` | 显示子智能体任务状态 |
+| `/mcp` | 列出已配置的 MCP 服务器及其工具 |
+| `/mcp reload` | 重连所有 MCP 服务器并刷新工具列表 |
+| `/mcp reload <name>` | 重连单个 MCP 服务器 |
+| `/mcp add <name> <cmd> [args]` | 向用户配置添加 stdio MCP 服务器 |
+| `/mcp remove <name>` | 从用户配置中移除服务器 |
+| `/image [prompt]` | 截取剪贴板图片并发送给视觉模型（可附加提示词） |
+| `/img [prompt]` | `/image` 的别名 |
+| `/plan <description>` | 进入计划模式：只读分析，仅写入计划文件 |
+| `/plan` | 显示当前计划文件内容 |
+| `/plan done` | 退出计划模式，恢复原始权限 |
+| `/plan status` | 显示计划模式是否激活 |
+| `/compact` | 手动压缩对话（与自动压缩相同，但由用户触发） |
+| `/compact <focus>` | 带焦点指令压缩（如 `/compact keep the auth refactor context`） |
+| `/init` | 在当前工作目录创建 `CLAUDE.md` 模板 |
+| `/export` | 将对话导出为 Markdown 文件到 `.nano_claude/exports/` |
+| `/export <filename>` | 导出为 Markdown 或 JSON（根据 `.json` 扩展名判断） |
+| `/copy` | 将最后一条助手回复复制到剪贴板 |
+| `/status` | 显示版本、模型、厂商、权限、会话 ID、token 用量和上下文占用率 |
+| `/doctor` | 诊断安装状态：Python、git、API Key、可选依赖、CLAUDE.md |
+| `/exit` / `/quit` | 退出 |
 
-**Switching models inside a session:**
+**在会话中切换模型：**
 
 ```
 [myproject] ❯ /model
-  Current model: claude-opus-4-6  (provider: anthropic)
+  当前模型：claude-opus-4-6  (厂商: anthropic)
 
-  Available models by provider:
+  按厂商列出的可用模型：
     anthropic     claude-opus-4-6, claude-sonnet-4-6, ...
     openai        gpt-4o, gpt-4o-mini, o3-mini, ...
     ollama        llama3.3, llama3.2, phi4, mistral, ...
     ...
 
 [myproject] ❯ /model gpt-4o
-  Model set to gpt-4o  (provider: openai)
+  模型已切换为 gpt-4o  (厂商: openai)
 
 [myproject] ❯ /model ollama/qwen2.5-coder
-  Model set to ollama/qwen2.5-coder  (provider: ollama)
+  模型已切换为 ollama/qwen2.5-coder  (厂商: ollama)
 ```
 
 ---
 
-## Configuring API Keys
+## 配置 API Key
 
-### Method 1: Environment Variables (recommended)
+### 方法一：环境变量（推荐）
 
 ```bash
-# Add to ~/.bashrc or ~/.zshrc
+# 添加到 ~/.bashrc 或 ~/.zshrc
 export ANTHROPIC_API_KEY=sk-ant-...
 export OPENAI_API_KEY=sk-...
 export GEMINI_API_KEY=AIza...
 export MOONSHOT_API_KEY=sk-...       # Kimi
 export DASHSCOPE_API_KEY=sk-...      # Qwen
-export ZHIPU_API_KEY=...             # Zhipu GLM
+export ZHIPU_API_KEY=...             # 智谱 GLM
 export DEEPSEEK_API_KEY=sk-...       # DeepSeek
 export MINIMAX_API_KEY=...           # MiniMax
 ```
 
-### Method 2: Set Inside the REPL (persisted)
+### 方法二：在 REPL 内设置（持久化）
 
 ```
 /config anthropic_api_key=sk-ant-...
@@ -585,9 +560,9 @@ export MINIMAX_API_KEY=...           # MiniMax
 /config minimax_api_key=...
 ```
 
-Keys are saved to `~/.pycc/config.json` and loaded automatically on next launch.
+Key 保存到 `~/.pycc/config.json`，下次启动自动加载。
 
-### Method 3: Edit the Config File Directly
+### 方法三：直接编辑配置文件
 
 ```json
 // ~/.pycc/config.json
@@ -606,130 +581,128 @@ Keys are saved to `~/.pycc/config.json` and loaded automatically on next launch.
 
 ---
 
-## Permission System
+## 权限系统
 
-| Mode | Behavior |
+| 模式 | 行为 |
 |---|---|
-| `auto` (default) | Read-only operations always allowed. Prompts before Bash commands and file writes. |
-| `accept-all` | Never prompts. All operations proceed automatically. |
-| `manual` | Prompts before every single operation, including reads. |
-| `plan` | Read-only analysis mode. Only the plan file (`.nano_claude/plans/`) is writable. Entered via `/plan <desc>` or the `EnterPlanMode` tool. |
+| `auto`（默认）| 只读操作始终允许。Bash 命令和文件写入前提示确认。 |
+| `accept-all` | 从不提示，所有操作自动执行。 |
+| `manual` | 每个操作前都提示，包括读取操作。 |
+| `plan` | 只读分析模式。仅计划文件（`.pycc/plans/`）可写。通过 `/plan <desc>` 或 `EnterPlanMode` 工具进入。 |
 
-**When prompted:**
+**被提示时：**
 
 ```
   Allow: Run: git commit -am "fix bug"  [y/N/a(ccept-all)]
 ```
 
-- `y` — approve this one action
-- `n` or Enter — deny
-- `a` — approve and switch to `accept-all` for the rest of the session
+- `y` — 批准本次操作
+- `n` 或 Enter — 拒绝
+- `a` — 批准并将本次会话切换为 `accept-all`
 
-**Commands always auto-approved in `auto` mode:**
-`ls`, `cat`, `head`, `tail`, `wc`, `pwd`, `echo`, `git status`, `git log`, `git diff`, `git show`, `find`, `grep`, `rg`, `python`, `node`, `pip show`, `npm list`, and other read-only shell commands.
-
----
-
-## Built-in Tools
-
-### Core Tools
-
-| Tool | Description | Key Parameters |
-|---|---|---|
-| `Read` | Read file with line numbers | `file_path`, `limit`, `offset` |
-| `Write` | Create or overwrite file (shows diff) | `file_path`, `content` |
-| `Edit` | Exact string replacement (shows diff) | `file_path`, `old_string`, `new_string`, `replace_all` |
-| `Bash` | Execute shell command | `command`, `timeout` (default 30s) |
-| `Glob` | Find files by glob pattern | `pattern` (e.g. `**/*.py`), `path` |
-| `Grep` | Regex search in files (uses ripgrep if available) | `pattern`, `path`, `glob`, `output_mode` |
-| `WebFetch` | Fetch and extract text from URL | `url`, `prompt` |
-| `WebSearch` | Search the web via DuckDuckGo | `query` |
-
-### Notebook & Diagnostics Tools
-
-| Tool | Description | Key Parameters |
-|---|---|---|
-| `NotebookEdit` | Edit a Jupyter notebook (`.ipynb`) cell | `notebook_path`, `new_source`, `cell_id`, `cell_type`, `edit_mode` (`replace`/`insert`/`delete`) |
-| `GetDiagnostics` | Get LSP-style diagnostics for a source file (pyright/mypy/flake8 for Python; tsc/eslint for JS/TS; shellcheck for shell) | `file_path`, `language` (optional override) |
-
-### Memory Tools
-
-| Tool | Description | Key Parameters |
-|---|---|---|
-| `MemorySave` | Save or update a persistent memory | `name`, `type`, `description`, `content`, `scope` |
-| `MemoryDelete` | Delete a memory by name | `name`, `scope` |
-| `MemorySearch` | Search memories by keyword (or AI ranking) | `query`, `scope`, `use_ai`, `max_results` |
-| `MemoryList` | List all memories with age and metadata | `scope` |
-
-### Sub-Agent Tools
-
-| Tool | Description | Key Parameters |
-|---|---|---|
-| `Agent` | Spawn a sub-agent for a task | `prompt`, `subagent_type`, `isolation`, `name`, `model`, `wait` |
-| `SendMessage` | Send a message to a named background agent | `name`, `message` |
-| `CheckAgentResult` | Check status/result of a background agent | `task_id` |
-| `ListAgentTasks` | List all active and finished agent tasks | — |
-| `ListAgentTypes` | List available agent type definitions | — |
-
-### Background & Autonomy Tools
-
-| Tool | Description | Key Parameters |
-|---|---|---|
-| `SleepTimer` | Schedule a silent background timer; injects an automated wake-up prompt when it fires so the agent can resume monitoring or deferred tasks | `seconds` |
-
-### Skill Tools
-
-| Tool | Description | Key Parameters |
-|---|---|---|
-| `Skill` | Invoke a skill by name from within the conversation | `name`, `args` |
-| `SkillList` | List all available skills with triggers and metadata | — |
-
-### MCP Tools
-
-MCP tools are discovered automatically from configured servers and registered under the name `mcp__<server>__<tool>`. Claude can use them exactly like built-in tools.
-
-| Example tool name | Where it comes from |
-|---|---|
-| `mcp__git__git_status` | `git` server, `git_status` tool |
-| `mcp__filesystem__read_file` | `filesystem` server, `read_file` tool |
-| `mcp__myserver__my_action` | custom server you configured |
-
-> **Adding custom tools:** See [Architecture Guide](docs/architecture.md#tool-registry) for how to register your own tools.
+**在 `auto` 模式下始终自动批准的命令：**
+`ls`、`cat`、`head`、`tail`、`wc`、`pwd`、`echo`、`git status`、`git log`、`git diff`、`git show`、`find`、`grep`、`rg`、`python`、`node`、`pip show`、`npm list` 以及其他只读 Shell 命令。
 
 ---
 
-## Memory
+## 内置工具
 
-The model can remember things across conversations using the built-in memory system.
+### 核心工具
 
-### Storage
-
-Memories are stored as individual markdown files in two scopes:
-
-| Scope | Path | Visibility |
+| 工具 | 说明 | 主要参数 |
 |---|---|---|
-| **User** (default) | `~/.pycc/memory/` | Shared across all projects |
-| **Project** | `.pycc/memory/` in cwd | Local to the current repo |
+| `Read` | 带行号读取文件 | `file_path`、`limit`、`offset` |
+| `Write` | 创建或覆写文件（显示差异） | `file_path`、`content` |
+| `Edit` | 精确字符串替换（显示差异） | `file_path`、`old_string`、`new_string`、`replace_all` |
+| `Bash` | 执行 Shell 命令 | `command`、`timeout`（默认 30s） |
+| `Glob` | 按 glob 模式查找文件 | `pattern`（如 `**/*.py`）、`path` |
+| `Grep` | 正则搜索文件内容（有 ripgrep 则使用） | `pattern`、`path`、`glob`、`output_mode` |
+| `WebFetch` | 抓取 URL 并提取文本 | `url`、`prompt` |
+| `WebSearch` | 通过 DuckDuckGo 搜索网页 | `query` |
 
-A `MEMORY.md` index (≤ 200 lines / 25 KB) is auto-rebuilt on every save or delete and injected into the system prompt so the model always has an overview of what's been remembered.
+### Notebook 与诊断工具
 
-### Memory types
+| 工具 | 说明 | 主要参数 |
+|---|---|---|
+| `NotebookEdit` | 编辑 Jupyter notebook（`.ipynb`）单元格 | `notebook_path`、`new_source`、`cell_id`、`cell_type`、`edit_mode`（`replace`/`insert`/`delete`） |
+| `GetDiagnostics` | 获取源文件的 LSP 风格诊断（Python 用 pyright/mypy/flake8；JS/TS 用 tsc/eslint；Shell 用 shellcheck） | `file_path`、`language`（可选覆盖） |
 
-| Type | Use for |
+### 记忆工具
+
+| 工具 | 说明 | 主要参数 |
+|---|---|---|
+| `MemorySave` | 保存或更新一条持久记忆 | `name`、`type`、`description`、`content`、`scope` |
+| `MemoryDelete` | 按名称删除记忆 | `name`、`scope` |
+| `MemorySearch` | 按关键词搜索记忆（或 AI 排序） | `query`、`scope`、`use_ai`、`max_results` |
+| `MemoryList` | 列出所有记忆及其年龄和元数据 | `scope` |
+
+### 子智能体工具
+
+| 工具 | 说明 | 主要参数 |
+|---|---|---|
+| `Agent` | 为任务派发子智能体 | `prompt`、`subagent_type`、`isolation`、`name`、`model`、`wait` |
+| `SendMessage` | 向后台命名智能体发送消息 | `name`、`message` |
+| `CheckAgentResult` | 查询后台智能体的状态/结果 | `task_id` |
+| `ListAgentTasks` | 列出所有活跃和已完成的智能体任务 | — |
+| `ListAgentTypes` | 列出可用的智能体类型定义 | — |
+
+### 后台与自主工具
+
+| 工具 | 说明 | 主要参数 |
+|---|---|---|
+| `SleepTimer` | 安排一个无声后台计时器；触发时注入自动唤醒提示，让智能体可以恢复监控或延迟任务 | `seconds` |
+
+### 技能工具
+
+| 工具 | 说明 | 主要参数 |
+|---|---|---|
+| `Skill` | 在对话中按名称调用技能 | `name`、`args` |
+| `SkillList` | 列出所有可用技能及其触发器和元数据 | — |
+
+### MCP 工具
+
+MCP 工具从已配置的服务器自动发现，以 `mcp__<server>__<tool>` 格式注册。Claude 可像内置工具一样调用它们。
+
+| 工具名称示例 | 来源 |
 |---|---|
-| `user` | Your role, preferences, background |
-| `feedback` | How you want the model to behave (corrections AND confirmations) |
-| `project` | Ongoing work, deadlines, decisions not in git history |
-| `reference` | Links to external systems (Linear, Grafana, Slack, etc.) |
+| `mcp__git__git_status` | `git` 服务器的 `git_status` 工具 |
+| `mcp__filesystem__read_file` | `filesystem` 服务器的 `read_file` 工具 |
+| `mcp__myserver__my_action` | 你配置的自定义服务器 |
 
-### Memory file format
+---
 
-Each memory is a markdown file with YAML frontmatter:
+## 记忆系统
+
+模型可以通过内置记忆系统跨对话记住信息。
+
+### 存储
+
+记忆以独立 Markdown 文件形式保存在两个作用域中：
+
+| 作用域 | 路径 | 可见性 |
+|---|---|---|
+| **User**（默认）| `~/.pycc/memory/` | 跨所有项目共享 |
+| **Project** | 当前目录下的 `.pycc/memory/` | 仅限当前仓库 |
+
+每次保存或删除后自动重建 `MEMORY.md` 索引（≤ 200 行 / 25 KB），并注入系统提示，让模型始终有记忆概览。
+
+### 记忆类型
+
+| 类型 | 适用于 |
+|---|---|
+| `user` | 你的角色、偏好、背景 |
+| `feedback` | 你希望模型如何表现（纠正与确认） |
+| `project` | 进行中的工作、截止日期、git 历史中没有的决策 |
+| `reference` | 指向外部系统的链接（Linear、Grafana、Slack 等） |
+
+### 记忆文件格式
+
+每条记忆是一个带 YAML 前置元数据的 Markdown 文件：
 
 ```markdown
 ---
 name: coding_style
-description: Python formatting preferences
+description: Python 格式偏好
 type: feedback
 created: 2026-04-02
 confidence: 0.95
@@ -737,23 +710,23 @@ source: user
 last_used_at: 2026-04-05
 conflict_group: coding_style
 ---
-Prefer 4-space indentation and full type hints in all Python code.
-**Why:** user explicitly stated this preference.
-**How to apply:** apply to every Python file written or edited.
+Python 代码一律使用 4 空格缩进和完整类型标注。
+**Why:** 用户明确声明了此偏好。
+**How to apply:** 对每个写入或编辑的 Python 文件应用。
 ```
 
-**Metadata fields** (new — auto-managed):
+**元数据字段**（自动管理）：
 
-| Field | Default | Description |
+| 字段 | 默认值 | 说明 |
 |---|---|---|
-| `confidence` | `1.0` | Reliability score 0–1. Explicit user statements = 1.0; inferred preferences ≈ 0.8; auto-consolidated ≈ 0.8 |
-| `source` | `user` | Origin: `user` / `model` / `tool` / `consolidator` |
-| `last_used_at` | — | Updated automatically each time this memory is returned by MemorySearch |
-| `conflict_group` | — | Groups related memories (e.g. `writing_style`) for conflict tracking |
+| `confidence` | `1.0` | 可靠性评分 0–1。用户明确陈述 = 1.0；推断偏好 ≈ 0.8；自动提炼 ≈ 0.8 |
+| `source` | `user` | 来源：`user` / `model` / `tool` / `consolidator` |
+| `last_used_at` | — | 每次被 MemorySearch 返回时自动更新 |
+| `conflict_group` | — | 对相关记忆分组（如 `writing_style`）以追踪冲突 |
 
-### Conflict detection
+### 冲突检测
 
-When `MemorySave` is called with a name that already exists but different content, the system reports the conflict before overwriting:
+当 `MemorySave` 被调用且名称已存在但内容不同时，系统在覆盖前报告冲突：
 
 ```
 Memory saved: 'writing_style' [feedback/user]
@@ -761,191 +734,151 @@ Memory saved: 'writing_style' [feedback/user]
   Old content: Prefer formal, academic style...
 ```
 
-### Ranked retrieval
+### 排序检索
 
-`MemorySearch` ranks results by **confidence × recency** (30-day exponential decay) rather than plain keyword order. Memories that haven't been used recently fade in priority. Each search hit also updates `last_used_at` so frequently-accessed memories stay prominent.
+`MemorySearch` 按**置信度 × 近期度**（30 天指数衰减）排序，而非简单关键词顺序。长期未使用的记忆优先级降低。每次搜索命中还会更新 `last_used_at`，让常用记忆保持靠前。
 
-```
-You: /memory python
-  [feedback/user] coding_style [conf:95% src:user]
-    Python formatting preferences
-    Prefer 4-space indentation and full type hints...
-```
+### `/memory consolidate` — 自动提炼长期洞察
 
-### `/memory consolidate` — auto-extract long-term insights
-
-After a meaningful session, run:
+有意义的会话结束后，运行：
 
 ```
 [myproject] ❯ /memory consolidate
-  Analyzing session for long-term memories…
-  ✓ Consolidated 2 memory/memories: user_prefers_direct_answers, avoid_trailing_summaries
+  正在从会话中分析长期记忆...
+  ✓ 已提炼 2 条记忆：user_prefers_direct_answers, avoid_trailing_summaries
 ```
 
-The command sends a condensed session transcript to the model and asks it to identify up to **3** insights worth keeping long-term (user preferences, feedback corrections, project decisions). Extracted memories are saved with `confidence: 0.80` and `source: consolidator` — they **never overwrite** an existing memory that already has higher confidence.
+该命令将精简版会话记录发送给模型，要求它识别最多 **3** 条值得长期保留的洞察。提炼的记忆以 `confidence: 0.80` 和 `source: consolidator` 保存——**绝不覆盖**已有更高置信度的记忆。
 
-Good times to run `/memory consolidate`:
-- After correcting the model's behavior several times in a row
-- After a session where you shared project background or decisions
-- After completing a task with clear planning choices
-
-### Example interaction
-
-```
-You: Remember that I prefer 4-space indentation and type hints.
-AI: [calls MemorySave] Memory saved: 'coding_style' [feedback/user]
-
-You: /memory
-  1 memory/memories:
-  [feedback  |user   ] coding_style.md
-    Python formatting preferences
-
-You: /memory python
-  Found 1 relevant memory for 'python':
-  [feedback/user] coding_style
-    Prefer 4-space indentation and full type hints in all Python code.
-
-You: /memory consolidate
-  ✓ Consolidated 1 memory: user_prefers_verbose_commit_messages
-```
-
-**Staleness warnings:** Memories older than 1 day show a `⚠ stale` caveat — claims about file:line citations or code state may be outdated; verify before acting.
-
-**AI-ranked search:** `MemorySearch(query="...", use_ai=true)` uses the model to rank candidates by relevance before applying the confidence × recency re-ranking.
+**陈旧警告：** 超过 1 天的记忆会显示 `⚠ stale` 提示——关于文件行号或代码状态的声明可能已过时，行动前请核实。
 
 ---
 
-## Skills
+## 技能系统
 
-Skills are reusable prompt templates that give the model specialized capabilities. Two built-in skills ship out of the box — no setup required.
+技能是可复用的提示模板，为模型提供专项能力。两个内置技能开箱即用，无需任何配置。
 
-**Built-in skills:**
+**内置技能：**
 
-| Trigger | Description |
+| 触发器 | 说明 |
 |---|---|
-| `/commit` | Review staged changes and create a well-structured git commit |
-| `/review [PR]` | Review code or PR diff with structured feedback |
+| `/commit` | 审查暂存变更并创建规范的 git commit |
+| `/review [PR]` | 对代码或 PR diff 进行结构化审查 |
 
-**Quick start — custom skill:**
+**快速上手——自定义技能：**
 
 ```bash
 mkdir -p ~/.pycc/skills
 ```
 
-Create `~/.pycc/skills/deploy.md`:
+创建 `~/.pycc/skills/deploy.md`：
 
 ```markdown
 ---
 name: deploy
-description: Deploy to an environment
+description: 部署到某个环境
 triggers: [/deploy]
 allowed-tools: [Bash, Read]
-when_to_use: Use when the user wants to deploy a version to an environment.
+when_to_use: 当用户想要将某个版本部署到某个环境时使用。
 argument-hint: [env] [version]
 arguments: [env, version]
-context: inline
 ---
 
-Deploy $VERSION to the $ENV environment.
-Full args: $ARGUMENTS
+将 $VERSION 部署到 $ENV 环境。
+完整参数：$ARGUMENTS
 ```
 
-Now use it:
+使用：
 
 ```
 You: /deploy staging 2.1.0
-AI: [deploys version 2.1.0 to staging]
+AI: [将 2.1.0 版本部署到 staging 环境]
 ```
 
-**Argument substitution:**
-- `$ARGUMENTS` — the full raw argument string
-- `$ARG_NAME` — positional substitution by named argument (first word → first name)
-- Missing args become empty strings
+**参数替换：**
+- `$ARGUMENTS` — 完整原始参数字符串
+- `$ARG_NAME` — 按命名参数的位置替换
+- 缺失的参数变为空字符串
 
-**Execution modes:**
-- `context: inline` (default) — runs inside current conversation history
-- `context: fork` — runs as an isolated sub-agent with fresh history; supports `model` override
+**优先级**（高 → 低）：项目级 > 用户级 > 内置
 
-**Priority** (highest wins): project-level > user-level > built-in
+**列出技能：** `/skills`
 
-**List skills:** `/skills` — shows triggers, argument hint, source, and `when_to_use`
-
-**Skill search paths:**
+**技能搜索路径：**
 
 ```
-./.pycc/skills/     # project-level (overrides user-level)
-~/.pycc/skills/     # user-level
+./.pycc/skills/     # 项目级（覆盖用户级）
+~/.pycc/skills/     # 用户级
 ```
 
 ---
 
-## Sub-Agents
+## 子智能体
 
-The model can spawn independent sub-agents to handle tasks in parallel.
+模型可以派发独立的子智能体并行处理任务。
 
-**Specialized agent types** — built-in:
+**内置的专项智能体类型：**
 
-| Type | Optimized for |
+| 类型 | 优化方向 |
 |---|---|
-| `general-purpose` | Research, exploration, multi-step tasks |
-| `coder` | Writing, reading, and modifying code |
-| `reviewer` | Security, correctness, and code quality analysis |
-| `researcher` | Web search and documentation lookup |
-| `tester` | Writing and running tests |
+| `general-purpose` | 研究、探索、多步骤任务 |
+| `coder` | 编写、阅读和修改代码 |
+| `reviewer` | 安全性、正确性和代码质量分析 |
+| `researcher` | 网页搜索和文档查找 |
+| `tester` | 编写和运行测试 |
 
-**Basic usage:**
+**基本用法：**
 ```
-You: Search this codebase for all TODO comments and summarize them.
-AI: [calls Agent(prompt="...", subagent_type="researcher")]
-    Sub-agent reads files, greps for TODOs...
-    Result: Found 12 TODOs across 5 files...
-```
-
-**Background mode** — spawn without waiting, collect result later:
-```
-AI: [calls Agent(prompt="run all tests", name="test-runner", wait=false)]
-AI: [continues other work...]
-AI: [calls CheckAgentResult / SendMessage to follow up]
+You: 搜索代码库中所有 TODO 注释并汇总。
+AI: [调用 Agent(prompt="...", subagent_type="researcher")]
+    子智能体读取文件，grep TODO...
+    结果：在 5 个文件中发现 12 个 TODO...
 ```
 
-**Git worktree isolation** — agents work on an isolated branch with no conflicts:
+**后台模式** — 无需等待，稍后收集结果：
 ```
-Agent(prompt="refactor auth module", isolation="worktree")
+AI: [调用 Agent(prompt="run all tests", name="test-runner", wait=false)]
+AI: [继续其他工作...]
+AI: [调用 CheckAgentResult / SendMessage 跟进]
 ```
-The worktree is auto-cleaned up if no changes were made; otherwise the branch name is reported.
 
-**Custom agent types** — create `~/.pycc/agents/myagent.md`:
+**git worktree 隔离** — 智能体在独立分支上工作，无冲突：
+```
+Agent(prompt="重构 auth 模块", isolation="worktree")
+```
+
+**自定义智能体类型** — 创建 `~/.pycc/agents/myagent.md`：
 ```markdown
 ---
 name: myagent
-description: Specialized for X
+description: 专门处理 X
 model: claude-haiku-4-5-20251001
 tools: [Read, Grep, Bash]
 ---
-Extra system prompt for this agent type.
+此智能体类型的额外系统提示。
 ```
 
-**List running agents:** `/agents`
+**列出运行中的智能体：** `/agents`
 
-Sub-agents have independent conversation history, share the file system, and are limited to 3 levels of nesting.
+子智能体拥有独立对话历史，共享文件系统，最多嵌套 3 层。
 
 ---
 
-## MCP (Model Context Protocol)
+## MCP（模型上下文协议）
 
-MCP lets you connect any external tool server — local subprocess or remote HTTP — and Claude can use its tools automatically. This is the same protocol Claude Code uses to extend its capabilities.
+MCP 允许你接入任意外部工具服务器——本地子进程或远程 HTTP——Claude 可自动使用其工具。
 
-### Supported transports
+### 支持的传输方式
 
-| Transport | Config `type` | Description |
+| 传输 | 配置 `type` | 说明 |
 |---|---|---|
-| **stdio** | `"stdio"` | Spawn a local subprocess (most common) |
-| **SSE** | `"sse"` | HTTP Server-Sent Events stream |
-| **HTTP** | `"http"` | Streamable HTTP POST (newer servers) |
+| **stdio** | `"stdio"` | 派生本地子进程（最常见） |
+| **SSE** | `"sse"` | HTTP Server-Sent Events 流 |
+| **HTTP** | `"http"` | 可流式 HTTP POST（较新的服务器） |
 
-### Configuration
+### 配置
 
-Place a `.mcp.json` file in your project directory **or** edit `~/.pycc/mcp.json` for user-wide servers.
+在项目目录放置 `.mcp.json` 文件，**或**编辑 `~/.pycc/mcp.json` 配置全局服务器。
 
 ```json
 {
@@ -969,534 +902,256 @@ Place a `.mcp.json` file in your project directory **or** edit `~/.pycc/mcp.json
 }
 ```
 
-Config priority: `.mcp.json` (project) overrides `~/.pycc/mcp.json` (user) by server name.
+配置优先级：`.mcp.json`（项目）按服务器名覆盖 `~/.pycc/mcp.json`（用户）。
 
-### Quick start
+### 快速上手
 
 ```bash
-# Install a popular MCP server
-pip install uv        # uv includes uvx
-uvx mcp-server-git --help   # verify it works
+pip install uv
+uvx mcp-server-git --help
 
-# Add to user config via REPL
 /mcp add git uvx mcp-server-git
-
-# Or create .mcp.json in your project dir, then:
 /mcp reload
 ```
 
-### REPL commands
+### REPL 命令
 
 ```
-/mcp                          # list servers + their tools + connection status
-/mcp reload                   # reconnect all servers, refresh tool list
-/mcp reload git               # reconnect a single server
-/mcp add myserver uvx mcp-server-x   # add stdio server
-/mcp remove myserver          # remove from user config
+/mcp                          # 列出服务器 + 工具 + 连接状态
+/mcp reload                   # 重连所有服务器，刷新工具列表
+/mcp reload git               # 重连单个服务器
+/mcp add myserver uvx mcp-server-x
+/mcp remove myserver
 ```
 
-### How Claude uses MCP tools
+### 热门 MCP 服务器
 
-Once connected, Claude can call MCP tools directly:
-
-```
-You: What files changed in the last git commit?
-AI: [calls mcp__git__git_diff_staged()]
-    → shows diff output from the git MCP server
-```
-
-Tool names follow the pattern `mcp__<server_name>__<tool_name>`. All characters
-that are not alphanumeric or `_` are automatically replaced with `_`.
-
-### Popular MCP servers
-
-| Server | Install | Provides |
+| 服务器 | 安装 | 提供功能 |
 |---|---|---|
-| `mcp-server-git` | `uvx mcp-server-git` | git operations (status, diff, log, commit) |
-| `mcp-server-filesystem` | `uvx mcp-server-filesystem <path>` | file read/write/list |
-| `mcp-server-fetch` | `uvx mcp-server-fetch` | HTTP fetch tool |
-| `mcp-server-postgres` | `uvx mcp-server-postgres <conn-str>` | PostgreSQL queries |
-| `mcp-server-sqlite` | `uvx mcp-server-sqlite --db-path x.db` | SQLite queries |
-| `mcp-server-brave-search` | `uvx mcp-server-brave-search` | Brave web search |
+| `mcp-server-git` | `uvx mcp-server-git` | git 操作 |
+| `mcp-server-filesystem` | `uvx mcp-server-filesystem <path>` | 文件读写 |
+| `mcp-server-fetch` | `uvx mcp-server-fetch` | HTTP 抓取 |
+| `mcp-server-postgres` | `uvx mcp-server-postgres <conn-str>` | PostgreSQL 查询 |
+| `mcp-server-sqlite` | `uvx mcp-server-sqlite --db-path x.db` | SQLite 查询 |
+| `mcp-server-brave-search` | `uvx mcp-server-brave-search` | Brave 网页搜索 |
 
-> Browse the full registry at [modelcontextprotocol.io/servers](https://modelcontextprotocol.io/servers)
-
-## AskUserQuestion Tool
-
-Claude can pause mid-task and interactively ask you a question before proceeding.
-
-**Example invocation by Claude:**
-```json
-{
-  "tool": "AskUserQuestion",
-  "question": "Which database should I use?",
-  "options": [
-    {"label": "SQLite", "description": "Simple, file-based"},
-    {"label": "PostgreSQL", "description": "Full-featured, requires server"}
-  ],
-  "allow_freetext": true
-}
-```
-
-**What you see in the terminal:**
-```
-❓ Question from assistant:
-   Which database should I use?
-
-  [1] SQLite — Simple, file-based
-  [2] PostgreSQL — Full-featured, requires server
-  [0] Type a custom answer
-
-Your choice (number or text):
-```
-
-- Select by number or type free text directly
-- Claude receives your answer and continues the task
-- 5-minute timeout (returns "(no answer — timeout)" if unanswered)
+> 浏览完整服务器列表：[modelcontextprotocol.io/servers](https://modelcontextprotocol.io/servers)
 
 ---
 
-## Task Management
+## AskUserQuestion 工具
 
-The `task/` package gives Claude (and you) a structured task list for tracking multi-step work within a session.
+Claude 可以在任务中途暂停，交互式地向你提问后再继续。
 
-### Tools available to Claude
-
-| Tool | Parameters | What it does |
-|------|-----------|--------------|
-| `TaskCreate` | `subject`, `description`, `active_form?`, `metadata?` | Create a task; returns `#id created: subject` |
-| `TaskUpdate` | `task_id`, `subject?`, `description?`, `status?`, `owner?`, `metadata?` | Update any field; `status='deleted'` removes the task |
-| `TaskGet` | `task_id` | Return full details of one task |
-| `TaskList` | _(none)_ | List all tasks with status icons |
-
-**Valid statuses:** `pending` → `in_progress` → `completed` / `cancelled` / `deleted`
-
-### Persistence
-
-Tasks are saved to `.pycc/tasks.json` in the current working directory after every mutation and reloaded on first access.
-
-### REPL commands
-
+**终端显示：**
 ```
-/tasks                    list all tasks
-/tasks create <subject>   quick-create a task
-/tasks start <id>         mark in_progress
-/tasks done <id>          mark completed
-/tasks cancel <id>        mark cancelled
-/tasks delete <id>        remove a task
-/tasks get <id>           show full details
-/tasks clear              delete all tasks
+❓ 来自助手的问题：
+   应该使用哪个数据库？
+
+  [1] SQLite — 简单，基于文件
+  [2] PostgreSQL — 功能完整，需要服务器
+  [0] 输入自定义答案
+
+你的选择（数字或文本）：
 ```
 
-### Typical Claude workflow
+- 输入编号或直接输入文本
+- 5 分钟超时（无响应则返回 "(no answer — timeout)"）
+
+---
+
+## 任务管理
+
+`task/` 包让 Claude（和你）拥有结构化任务列表，用于追踪会话内的多步骤工作。
+
+### Claude 可用的工具
+
+| 工具 | 参数 | 作用 |
+|------|------|------|
+| `TaskCreate` | `subject`、`description`、`active_form?`、`metadata?` | 创建任务 |
+| `TaskUpdate` | `task_id`、`subject?`、`description?`、`status?`、`owner?`、`metadata?` | 更新任意字段；`status='deleted'` 删除任务 |
+| `TaskGet` | `task_id` | 返回单个任务的完整详情 |
+| `TaskList` | _（无）_ | 列出所有任务及状态图标 |
+
+**有效状态：** `pending` → `in_progress` → `completed` / `cancelled` / `deleted`
+
+### 持久化
+
+每次变更后任务保存到当前工作目录的 `.pycc/tasks.json`，首次访问时重新加载。
+
+### REPL 命令
 
 ```
-User: implement the login feature
-
-Claude:
-  TaskCreate(subject="Design auth schema", description="JWT vs session")  → #1
-  TaskCreate(subject="Write login endpoint", description="POST /auth/login") → #2
-  TaskCreate(subject="Write tests", description="Unit + integration") → #3
-
-  TaskUpdate(task_id="1", status="in_progress", active_form="Designing schema")
-  ... (does the work) ...
-  TaskUpdate(task_id="1", status="completed")
-  ...
+/tasks                    列出所有任务
+/tasks create <subject>   快速创建任务
+/tasks start <id>         标记为进行中
+/tasks done <id>          标记为已完成
+/tasks cancel <id>        标记为已取消
+/tasks delete <id>        删除任务
+/tasks get <id>           显示完整详情
+/tasks clear              删除所有任务
 ```
 
-## Plan Mode
+---
 
-Plan mode is a structured workflow for tackling complex, multi-file tasks: Claude first analyses the codebase in a read-only phase and writes an explicit plan, then the user approves before implementation begins.
+## 计划模式
 
-### How it works
+计划模式是一种处理复杂多文件任务的结构化工作流：Claude 先在只读阶段分析代码库并撰写明确计划，用户批准后再开始实施。
 
-In plan mode:
-- **Only reads** are permitted (`Read`, `Glob`, `Grep`, `WebFetch`, `WebSearch`, safe `Bash` commands).
-- **Writes are blocked** everywhere **except** the dedicated plan file (`.nano_claude/plans/<session_id>.md`).
-- Blocked write attempts produce a helpful message rather than prompting the user.
-- The system prompt is augmented with plan mode instructions.
-- After compaction, the plan file context is automatically restored.
+在计划模式下：
+- **只允许读取**（`Read`、`Glob`、`Grep`、`WebFetch`、`WebSearch`、安全的 `Bash` 命令）。
+- **写入被阻止**，仅限**专属计划文件**（`.nano_claude/plans/<session_id>.md`）。
+- 压缩后计划文件上下文自动恢复。
 
-### Slash command workflow
+### 斜杠命令工作流
 
 ```
-[myproject] ❯ /plan add WebSocket support
-  Plan mode activated.
-  Plan file: .nano_claude/plans/a3f9c1b2.md
-  Reads allowed. All other writes blocked (except plan file).
-
-[myproject] ❯ <describe your task>
-  [Claude reads files, builds understanding, writes plan to plan file]
+[myproject] ❯ /plan 添加 WebSocket 支持
+  已进入计划模式。
 
 [myproject] ❯ /plan
-  # Plan: Add WebSocket support
-
-  ## Phase 1: Create ws_handler.py
-  ## Phase 2: Modify server.py to mount the handler
-  ## Phase 3: Add tests
+  # 计划：添加 WebSocket 支持
+  ## 阶段 1：创建 ws_handler.py
+  ...
 
 [myproject] ❯ /plan done
-  Plan mode exited. Permission mode restored to: auto
-  Review the plan above and start implementing when ready.
-
-[myproject] ❯ /plan status
-  Plan mode: INACTIVE  (permission mode: auto)
+  已退出计划模式。权限模式已恢复为：auto
 ```
 
-### Agent tool workflow (autonomous)
+### 命令
 
-Claude can autonomously enter and exit plan mode using the `EnterPlanMode` and `ExitPlanMode` tools — both are auto-approved in all permission modes:
-
-```
-User: Refactor the authentication module
-
-Claude: [calls EnterPlanMode(task_description="Refactor auth module")]
-  → reads auth.py, users.py, tests/test_auth.py ...
-  → writes plan to .nano_claude/plans/...
-  [calls ExitPlanMode()]
-  → "Here is my plan. Please review and approve before I begin."
-
-User: Looks good, go ahead.
-Claude: [implements the plan]
-```
-
-### Commands
-
-| Command | Description |
+| 命令 | 说明 |
 |---|---|
-| `/plan <description>` | Enter plan mode with a task description |
-| `/plan` | Print the current plan file contents |
-| `/plan done` | Exit plan mode, restore previous permissions |
-| `/plan status` | Show whether plan mode is active |
+| `/plan <description>` | 进入计划模式 |
+| `/plan` | 打印当前计划文件内容 |
+| `/plan done` | 退出计划模式，恢复之前的权限 |
+| `/plan status` | 显示计划模式是否激活 |
 
 ---
 
-## Context Compression
+## 上下文压缩
 
-Long conversations are automatically compressed to stay within the model's context window.
+长对话会自动压缩以保持在模型上下文窗口内。
 
-**Two layers:**
+**两个层次：**
 
-1. **Snip** — Old tool outputs (file reads, bash results) are truncated after a few turns. Fast, no API cost.
-2. **Auto-compact** — When token usage exceeds 70% of the context limit, older messages are summarized by the model into a concise recap.
+1. **截断** — 旧的工具输出被截断。速度快，无 API 费用。
+2. **自动压缩** — 当 token 用量超过上下文限制的 70% 时，旧消息由模型摘要为简洁回顾。
 
-This happens transparently. You don't need to do anything.
-
-**Manual compaction** — You can also trigger compaction at any time with `/compact`. An optional focus string tells the summarizer what context to prioritize:
+**手动压缩：**
 
 ```
 [myproject] ❯ /compact
-  Compacted: ~12400 → ~3200 tokens (~9200 saved)
+  已压缩：~12400 → ~3200 tokens（节省 ~9200）
 
 [myproject] ❯ /compact keep the WebSocket implementation details
-  Compacted: ~11800 → ~3100 tokens (~8700 saved)
+  已压缩：~11800 → ~3100 tokens（节省 ~8700）
 ```
-
-If plan mode is active, the plan file context is automatically restored after any compaction.
 
 ---
 
-## Diff View
+## 差异视图
 
-When the model edits or overwrites a file, you see a git-style diff:
+模型编辑或覆写文件时，你会看到 git 风格的差异：
 
 ```diff
-  Changes applied to config.py:
-
 --- a/config.py
 +++ b/config.py
 @@ -12,7 +12,7 @@
-     "model": "claude-opus-4-6",
 -    "max_tokens": 8192,
 +    "max_tokens": 16384,
-     "permission_mode": "auto",
 ```
 
-Green lines = added, red lines = removed. New file creations show a summary instead.
+绿色行 = 新增，红色行 = 删除。
 
 ---
 
-## CLAUDE.md Support
+## CLAUDE.md 支持
 
-Place a `CLAUDE.md` file in your project to give the model persistent context about your codebase. Pycc automatically finds and injects it into the system prompt.
+在项目中放置 `CLAUDE.md` 文件，为模型提供代码库的持久上下文。pycc 自动查找并注入到系统提示中。
 
 ```
-~/.claude/CLAUDE.md          # Global — applies to all projects
-/your/project/CLAUDE.md      # Project-level — found by walking up from cwd
-```
-
-**Example `CLAUDE.md`:**
-
-```markdown
-# Project: FastAPI Backend
-
-## Stack
-- Python 3.12, FastAPI, PostgreSQL, SQLAlchemy 2.0, Alembic
-- Tests: pytest, coverage target 90%
-
-## Conventions
-- Format with black, lint with ruff
-- Full type annotations required
-- New endpoints must have corresponding tests
-
-## Important Notes
-- Never hard-code credentials — use environment variables
-- Do not modify existing Alembic migration files
-- The `staging` branch deploys automatically to staging on push
+~/.claude/CLAUDE.md          # 全局——适用于所有项目
+/your/project/CLAUDE.md      # 项目级——从 cwd 向上查找
 ```
 
 ---
 
-## Session Management
+## 会话管理
 
-### Storage layout
-
-Every exit automatically saves to three places:
+每次退出自动保存到三个位置：
 
 ```
 ~/.pycc/sessions/
-├── history.json                          ← master: all sessions ever (capped)
+├── history.json                    ← 主记录：所有会话
 ├── mr_sessions/
-│   └── session_latest.json              ← always the most recent (/resume)
+│   └── session_latest.json        ← 最近一次（/resume）
 └── daily/
-    ├── 2026-04-05/
-    │   ├── session_110523_a3f9.json     ← per-day files, newest kept
-    │   └── session_143022_b7c1.json
-    └── 2026-04-04/
-        └── session_183100_3b4c.json
+    └── 2026-04-05/
+        └── session_110523_a3f9.json
 ```
 
-Each session file includes metadata:
-
-```json
-{
-  "session_id": "a3f9c1b2",
-  "saved_at": "2026-04-05 11:05:23",
-  "turn_count": 8,
-  "messages": [...]
-}
-```
-
-### Autosave on exit
-
-Every time you exit — via `/exit`, `/quit`, `Ctrl+C`, or `Ctrl+D` — the session is saved automatically:
-
-```
-✓ Session saved → /home/.../.pycc/sessions/mr_sessions/session_latest.json
-✓              → /home/.../.pycc/sessions/daily/2026-04-05/session_110523_a3f9.json  (id: a3f9c1b2)
-✓   history.json: 12 sessions / 87 total turns
-```
-
-### Quick resume
-
-To continue where you left off:
+**快速恢复：**
 
 ```bash
 pycc
 [myproject] ❯ /resume
-✓  Session loaded from …/mr_sessions/session_latest.json (42 messages)
+✓  已加载会话（42 条消息）
 ```
 
-Resume a specific file:
+**手动保存 / 加载：**
 
 ```bash
-/resume session_latest.json          # loads from mr_sessions/
-/resume /absolute/path/to/file.json  # loads from absolute path
-```
-
-### Manual save / load
-
-```bash
-/save                          # save with auto-name (session_TIMESTAMP_ID.json)
-/save debug_auth_bug           # named save to ~/.pycc/sessions/
-
-/load                          # interactive list grouped by date
-/load debug_auth_bug           # load by filename
-```
-
-**`/load` interactive list:**
-
-```
-  ── 2026-04-05 ──
-  [ 1] 11:05:23  id:a3f9c1b2  turns:8   session_110523_a3f9.json
-  [ 2] 09:22:01  id:7e2d4f91  turns:3   session_092201_7e2d.json
-
-  ── 2026-04-04 ──
-  [ 3] 22:18:00  id:3b4c5d6e  turns:15  session_221800_3b4c.json
-
-  ── Complete History ──
-  [ H] Load ALL history  (3 sessions / 26 total turns)  /home/.../.pycc/sessions/history.json
-
-  Enter number(s) (e.g. 1 or 1,2,3), H for full history, or Enter to cancel >
-```
-
-- Enter a single number to load one session
-- Enter comma-separated numbers (e.g. `1,3`) to merge multiple sessions in order
-- Enter `H` to load the entire history — shows message count and token estimate before confirming
-
-### Configurable limits
-
-| Config key | Default | Description |
-|---|---|---|
-| `session_daily_limit` | `5` | Max session files kept per day in `daily/` |
-| `session_history_limit` | `100` | Max sessions kept in `history.json` |
-
-```bash
-/config session_daily_limit=10
-/config session_history_limit=200
-```
-
-### history.json — full conversation history
-
-`history.json` accumulates every session in one place, making it possible to search your complete conversation history or analyze usage patterns:
-
-```json
-{
-  "total_turns": 150,
-  "sessions": [
-    {"session_id": "a3f9c1b2", "saved_at": "2026-04-05 11:05:23", "turn_count": 8, "messages": [...]},
-    {"session_id": "7e2d4f91", "saved_at": "2026-04-05 09:22:01", "turn_count": 3, "messages": [...]}
-  ]
-}
+/save                    # 自动命名
+/save debug_auth_bug     # 命名保存
+/load                    # 交互式列表
+/load debug_auth_bug     # 按文件名加载
 ```
 
 ---
 
-## Project Structure
+## 项目结构
 
 ```
 pycc/
-├── pycc.py        # Entry point: REPL + slash commands + diff rendering + Rich Live streaming
-├── agent.py              # Agent loop: streaming, tool dispatch, compaction
-├── providers.py          # Multi-provider: Anthropic, OpenAI-compat streaming
-├── tools.py              # Core tools (Read/Write/Edit/Bash/Glob/Grep/Web/NotebookEdit/GetDiagnostics) + registry wiring
-├── tool_registry.py      # Tool plugin registry: register, lookup, execute
-├── compaction.py         # Context compression: snip + auto-summarize
-├── context.py            # System prompt builder: CLAUDE.md + git + memory
-├── config.py             # Config load/save/defaults; DAILY_DIR, SESSION_HIST_FILE paths
+├── pycc.py                # 入口：REPL + 斜杠命令 + 差异渲染 + Rich Live 流式输出
+├── agent.py              # 智能体循环：流式输出、工具分发、压缩
+├── providers.py          # 多厂商：Anthropic、OpenAI 兼容流式
+├── tools.py              # 核心工具 + 注册连接
+├── tool_registry.py      # 工具插件注册：注册、查找、执行
+├── compaction.py         # 上下文压缩：截断 + 自动摘要
+├── context.py            # 系统提示构建：CLAUDE.md + git + 记忆
+├── config.py             # 配置加载/保存/默认值
 │
-├── multi_agent/          # Multi-agent package
-│   ├── __init__.py       # Re-exports
-│   ├── subagent.py       # AgentDefinition, SubAgentManager, worktree helpers
-│   └── tools.py          # Agent, SendMessage, CheckAgentResult, ListAgentTasks, ListAgentTypes
+├── multi_agent/          # 多智能体包
+├── memory/               # 记忆包
+├── skill/                # 技能包
+├── mcp/                  # MCP 包
+├── hooks/                # Hook 系统：工具执行前/后回调
+├── security/             # 安全分析器：权限检查，Bash 风险级别
 │
-├── memory/               # Memory package
-│   ├── __init__.py       # Re-exports
-│   ├── types.py          # MEMORY_TYPES and format guidance
-│   ├── store.py          # save/load/delete/search, MEMORY.md index rebuilding
-│   ├── scan.py           # MemoryHeader, age/freshness helpers
-│   ├── context.py        # get_memory_context(), truncation, AI search
-│   └── tools.py          # MemorySave, MemoryDelete, MemorySearch, MemoryList
-├── memory.py             # Backward-compat shim → memory/
-│
-├── skill/                # Skill package
-│   ├── __init__.py       # Re-exports; imports builtin to register built-ins
-│   ├── loader.py         # SkillDef, parse, load_skills, find_skill, substitute_arguments
-│   ├── builtin.py        # Built-in skills: /commit, /review
-│   ├── executor.py       # execute_skill(): inline or forked sub-agent
-│   └── tools.py          # Skill, SkillList
-│
-├── mcp/                  # MCP (Model Context Protocol) package
-│   ├── __init__.py       # Re-exports
-│   ├── types.py          # MCPServerConfig, MCPTool, MCPServerState, JSON-RPC helpers
-│   ├── client.py         # StdioTransport, HttpTransport, MCPClient, MCPManager
-│   ├── config.py         # Load .mcp.json (project) + ~/.pycc/mcp.json (user)
-│   └── tools.py          # Auto-discover + register MCP tools into tool_registry
-│
-├── hooks/                # Hook system: pre/post tool execution callbacks
-│
-├── security/             # Security analyzer: permission checks, sandboxing
-│
-└── tests/                # 263+ unit tests
-    ├── test_mcp.py
-    ├── test_memory.py
-    ├── test_skills.py
-    ├── test_subagent.py
-    ├── test_tool_registry.py
-    ├── test_compaction.py
-    ├── test_diff_view.py
-    ├── e2e_plan_mode.py      # 10-step plan mode permission test
-    ├── e2e_plan_tools.py     # 8-step EnterPlanMode/ExitPlanMode tool test
-    ├── e2e_compact.py        # 9-step compaction test
-    └── e2e_commands.py       # 9-step /init /export /copy /status test
+└── tests/                # 单元测试
 ```
 
-> **For developers:** Each feature package (`multi_agent/`, `memory/`, `skill/`, `mcp/`, `hooks/`, `security/`) is self-contained. Add custom tools by calling `register_tool(ToolDef(...))` from any module imported by `tools.py`.
+> **开发者说明：** 通过在任何被 `tools.py` 导入的模块中调用 `register_tool(ToolDef(...))` 即可添加自定义工具。
 
 ---
 
-## FAQ
+## 常见问题
 
-**Q: How do I add an MCP server?**
+**Q：如何添加 MCP 服务器？**
 
-Option 1 — via REPL (stdio server):
 ```
 /mcp add git uvx mcp-server-git
 ```
 
-Option 2 — create `.mcp.json` in your project:
-```json
-{
-  "mcpServers": {
-    "git": {"type": "stdio", "command": "uvx", "args": ["mcp-server-git"]}
-  }
-}
-```
+或在项目中创建 `.mcp.json`，然后运行 `/mcp reload`。
 
-Then run `/mcp reload` or restart. Use `/mcp` to check connection status.
+**Q：本地 Ollama 模型无法调用工具。**
 
-**Q: An MCP server is showing an error. How do I debug it?**
+使用支持 function calling 的模型：`qwen2.5-coder`、`llama3.3`、`mistral` 或 `phi4`。
 
-```
-/mcp                    # shows error message per server
-/mcp reload git         # try reconnecting
-```
-
-If the server uses stdio, make sure the command is in your `$PATH`:
-```bash
-which uvx               # should print a path
-uvx mcp-server-git      # run manually to see errors
-```
-
-**Q: Can I use MCP servers that require authentication?**
-
-For HTTP/SSE servers with a Bearer token:
-```json
-{
-  "mcpServers": {
-    "my-api": {
-      "type": "sse",
-      "url": "https://myserver.example.com/sse",
-      "headers": {"Authorization": "Bearer sk-my-token"}
-    }
-  }
-}
-```
-
-For stdio servers with env-based auth:
-```json
-{
-  "mcpServers": {
-    "brave": {
-      "type": "stdio",
-      "command": "uvx",
-      "args": ["mcp-server-brave-search"],
-      "env": {"BRAVE_API_KEY": "your-key"}
-    }
-  }
-}
-```
-
-**Q: Tool calls don't work with my local Ollama model.**
-
-Not all models support function calling. Use one of the recommended tool-calling models: `qwen2.5-coder`, `llama3.3`, `mistral`, or `phi4`.
-
-```bash
-ollama pull qwen2.5-coder
-pycc --model ollama/qwen2.5-coder
-```
-
-**Q: How do I connect to a remote GPU server running vLLM?**
+**Q：如何连接到运行 vLLM 的远程 GPU 服务器？**
 
 ```
 /config custom_base_url=http://your-server-ip:8000/v1
@@ -1504,46 +1159,18 @@ pycc --model ollama/qwen2.5-coder
 /model custom/your-model-name
 ```
 
-**Q: How do I check my API cost?**
+**Q：如何查看 API 费用？**
 
 ```
 /cost
-
-  Input tokens:  3,421
-  Output tokens:   892
-  Est. cost:     $0.0648 USD
+  输入 token：  3,421
+  输出 token：    892
+  估算费用：   $0.0648 USD
 ```
 
-**Q: Can I use multiple API keys in the same session?**
-
-Yes. Set all the keys you need upfront (via env vars or `/config`). Then switch models freely — each call uses the key for the active provider.
-
-**Q: How do I make a model available across all projects?**
-
-Add keys to `~/.bashrc` or `~/.zshrc`. Set the default model in `~/.pycc/config.json`:
-
-```json
-{ "model": "claude-sonnet-4-6" }
-```
-
-**Q: Qwen / Zhipu returns garbled text.**
-
-Ensure your `DASHSCOPE_API_KEY` / `ZHIPU_API_KEY` is correct and the account has sufficient quota. Both providers use UTF-8 and handle Chinese well.
-
-**Q: Can I pipe input to pycc?**
+**Q：能通过管道向 pycc 输入内容吗？**
 
 ```bash
-echo "Explain this file" | pycc --print --accept-all
-cat error.log | pycc -p "What is causing this error?"
+echo "解释这个文件" | pycc --print --accept-all
+cat error.log | pycc -p "这个错误是什么原因导致的？"
 ```
-
-**Q: How do I run it as a CLI tool from anywhere?**
-
-Use `uv tool install` — it creates an isolated environment and puts `pycc` on your PATH:
-
-```bash
-cd pycc
-uv tool install .
-```
-
-After that, just run `pycc` from any directory. To update after pulling changes, run `uv tool install . --reinstall`.
