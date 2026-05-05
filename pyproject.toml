@@ -30,6 +30,7 @@ py-modules = [
     "compaction",
     "config",
     "context",
+    "plan_mode",
     "providers",
     "tool_registry",
     "tools",
