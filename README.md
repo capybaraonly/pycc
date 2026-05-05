@@ -28,8 +28,8 @@ python pycc.py                 # 启动 REPL
 | 持久记忆 | 双作用域记忆（user + project），4 种类型，置信度/来源元数据，冲突检测，按使用频率加权搜索，`last_used_at` 追踪，以及 `/memory consolidate` 自动提炼 |
 | 多智能体 | 派发类型化子智能体（coder/reviewer/researcher/…），git worktree 隔离，后台模式 |
 | 技能系统 | 内置 `/commit` · `/review` + 支持参数替换的自定义 Markdown 技能 |
-| 权限系统 | `auto` / `accept-all` / `manual` / `plan` 四种模式 |
-| 计划模式 | `/plan <描述>` 进入只读分析模式；Claude 仅写入计划文件；`EnterPlanMode` / `ExitPlanMode` 工具支持自主规划 |
+| 权限系统 | `auto` / `accept-all` / `manual` 三种模式 |
+| 计划模式 | 独立规划限制层（不修改 `permission_mode`）；`/plan <描述>` 或 `EnterPlanMode` 激活，仅计划文件可写；`ExitPlanMode` / `/plan done` 停用 |
 | 视觉输入 | `/image`（或 `/img`）截取剪贴板图片并发送给任意视觉模型 |
 | 强制退出 | 2 秒内连按 3 次 Ctrl+C 触发 `os._exit(1)`，立即终止进程 |
 | Rich 流式渲染 | 安装 `rich` 后，响应以实时更新的 Markdown 原地渲染 |
@@ -379,10 +379,10 @@ pycc --thinking --verbose
 | `/mcp remove <name>` | 从用户配置中移除服务器 |
 | `/image [prompt]` | 截取剪贴板图片并发送给视觉模型（可附加提示词） |
 | `/img [prompt]` | `/image` 的别名 |
-| `/plan <description>` | 进入计划模式：只读分析，仅写入计划文件 |
+| `/plan <description>` | 激活计划限制层：只读分析，仅写入计划文件 |
 | `/plan` | 显示当前计划文件内容 |
-| `/plan done` | 退出计划模式，恢复原始权限 |
-| `/plan status` | 显示计划模式是否激活 |
+| `/plan done` | 停用计划限制层 |
+| `/plan status` | 显示计划模式状态及基础权限模式 |
 | `/compact` | 手动压缩对话（与自动压缩相同，但由用户触发） |
 | `/compact <focus>` | 带焦点指令压缩（如 `/compact keep the auth refactor context`） |
 | `/init` | 在当前工作目录创建 `CLAUDE.md` 模板 |
@@ -472,7 +472,8 @@ Key 保存到 `~/.pycc/config.json`，下次启动自动加载。
 | `auto`（默认）| 只读操作始终允许。Bash 命令和文件写入前提示确认。 |
 | `accept-all` | 从不提示，所有操作自动执行。 |
 | `manual` | 每个操作前都提示，包括读取操作。 |
-| `plan` | 只读分析模式。仅计划文件（`.pycc/plans/`）可写。通过 `/plan <desc>` 或 `EnterPlanMode` 工具进入。 |
+
+> **计划模式**是独立于 `permission_mode` 之外的运行时限制层，通过 `/plan <描述>` 或 `EnterPlanMode` 工具激活，激活后仅计划文件可写，不修改基础权限策略。通过 `/plan done` 或 `ExitPlanMode` 停用。
 
 **被提示时：**
 
@@ -882,6 +883,8 @@ Claude 可以在任务中途暂停，交互式地向你提问后再继续。
 
 计划模式是一种处理复杂多文件任务的结构化工作流：Claude 先在只读阶段分析代码库并撰写明确计划，用户批准后再开始实施。
 
+**关键设计**：计划模式是独立于 `permission_mode` 的运行时限制层（Planning Overlay）。激活/停用不会修改 `permission_mode`（`auto`/`manual`/`accept-all`），两者正交运作。
+
 在计划模式下：
 - **只允许读取**（`Read`、`Glob`、`Grep`、`WebFetch`、`WebSearch`、安全的 `Bash` 命令）。
 - **写入被阻止**，仅限**专属计划文件**（`.nano_claude/plans/<session_id>.md`）。
@@ -891,7 +894,12 @@ Claude 可以在任务中途暂停，交互式地向你提问后再继续。
 
 ```
 [myproject] ❯ /plan 添加 WebSocket 支持
-  已进入计划模式。
+  计划限制层已激活(仅计划文件可写入)。
+
+[myproject] ❯ /plan status
+  计划模式: 已激活
+  基础权限模式: auto
+  计划文件: .../.nano_claude/plans/xxx.md
 
 [myproject] ❯ /plan
   # 计划：添加 WebSocket 支持
@@ -899,17 +907,17 @@ Claude 可以在任务中途暂停，交互式地向你提问后再继续。
   ...
 
 [myproject] ❯ /plan done
-  已退出计划模式。权限模式已恢复为：auto
+  计划限制层已停用。
 ```
 
 ### 命令
 
 | 命令 | 说明 |
 |---|---|
-| `/plan <description>` | 进入计划模式 |
+| `/plan <description>` | 激活计划限制层 |
 | `/plan` | 打印当前计划文件内容 |
-| `/plan done` | 退出计划模式，恢复之前的权限 |
-| `/plan status` | 显示计划模式是否激活 |
+| `/plan done` | 停用计划限制层（不改变 permission_mode） |
+| `/plan status` | 显示计划模式状态及基础权限模式 |
 
 ---
 

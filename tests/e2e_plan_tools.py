@@ -1,4 +1,8 @@
-"""End-to-end test for EnterPlanMode / ExitPlanMode tools."""
+"""End-to-end test for EnterPlanMode / ExitPlanMode tools.
+
+Plan mode is now an independent overlay (_plan_mode_active).
+permission_mode ('auto'|'manual'|'accept-all') is never changed by these tools.
+"""
 from __future__ import annotations
 
 import os
@@ -33,19 +37,23 @@ def _run(tmpdir):
         "_session_id": "tooltest",
     }
 
-    # ── Step 1: EnterPlanMode tool creates plan file and switches mode ──
+    # ── Step 1: EnterPlanMode tool creates plan file, sets _plan_mode_active ──
     print(f"\n{SEP}")
     print("STEP 1: EnterPlanMode")
     print(SEP)
     result = _enter_plan_mode({"task_description": "Add WebSocket support"}, config)
-    assert config["permission_mode"] == "plan"
-    assert config["_plan_file"]
+    # permission_mode must NOT change
+    assert config["permission_mode"] == "auto", \
+        f"permission_mode should stay 'auto', got {config['permission_mode']!r}"
+    assert config.get("_plan_mode_active") is True, "_plan_mode_active should be True"
+    assert config["_plan_file"], "_plan_file should be set"
     plan_path = Path(config["_plan_file"])
-    assert plan_path.exists()
-    assert "WebSocket" in plan_path.read_text(encoding="utf-8")
-    assert "Plan mode activated" in result
+    assert plan_path.exists(), "plan file should exist on disk"
+    assert "WebSocket" in plan_path.read_text(encoding="utf-8"), "plan file should contain task description"
+    assert "计划限制层已激活" in result, f"Expected activation message, got: {result!r}"
     print(f"  Plan file: {plan_path}")
-    print(f"  Mode: {config['permission_mode']}")
+    print(f"  permission_mode: {config['permission_mode']}")
+    print(f"  _plan_mode_active: {config['_plan_mode_active']}")
     print("  PASS")
 
     # ── Step 2: EnterPlanMode again → already in plan mode ──
@@ -53,7 +61,7 @@ def _run(tmpdir):
     print("STEP 2: EnterPlanMode while already in plan mode")
     print(SEP)
     result = _enter_plan_mode({}, config)
-    assert "Already in plan mode" in result
+    assert "已处于计划模式" in result, f"Expected 'already in plan mode' message, got: {result!r}"
     print(f"  {result}")
     print("  PASS")
 
@@ -84,16 +92,15 @@ def _run(tmpdir):
     print("  Plan tools: auto-approved")
     print("  PASS")
 
-    # ── Step 4: ExitPlanMode with empty plan → rejected ──
+    # ── Step 4: ExitPlanMode with empty/header-only plan → rejected ──
     print(f"\n{SEP}")
     print("STEP 4: ExitPlanMode with empty plan")
     print(SEP)
     # Plan file currently has just the header
     result = _exit_plan_mode({}, config)
-    # Should still be in plan mode if plan only has header
-    if "empty" in result.lower():
-        print(f"  Correctly rejected: {result[:60]}")
-        assert config["permission_mode"] == "plan"
+    if "空" in result or "empty" in result.lower():
+        print(f"  Correctly rejected: {result[:80]}")
+        assert config.get("_plan_mode_active") is True, "_plan_mode_active should still be True"
     else:
         # Header counts as content — that's fine too
         print(f"  Header accepted as plan content")
@@ -104,7 +111,7 @@ def _run(tmpdir):
     print("STEP 5: Write plan content and ExitPlanMode")
     print(SEP)
     # Ensure we're in plan mode
-    config["permission_mode"] = "plan"
+    config["_plan_mode_active"] = True
     plan_path.write_text(
         "# Plan: Add WebSocket support\n\n"
         "## Phase 1: Create ws_handler.py\n"
@@ -113,11 +120,15 @@ def _run(tmpdir):
         encoding="utf-8",
     )
     result = _exit_plan_mode({}, config)
-    assert config["permission_mode"] == "auto", f"Mode should be auto, got {config['permission_mode']}"
-    assert "Plan mode exited" in result
-    assert "Phase 1" in result  # plan content included
-    assert "Wait for the user to approve" in result
-    print(f"  Mode restored to: {config['permission_mode']}")
+    # permission_mode must NOT change
+    assert config["permission_mode"] == "auto", \
+        f"permission_mode should stay 'auto', got {config['permission_mode']!r}"
+    assert config.get("_plan_mode_active") is False, "_plan_mode_active should be False"
+    assert "计划限制层已停用" in result, f"Expected deactivation message, got: {result!r}"
+    assert "Phase 1" in result, "plan content should be included in result"
+    assert "用户审核" in result or "批准" in result, "should mention user approval"
+    print(f"  permission_mode: {config['permission_mode']}")
+    print(f"  _plan_mode_active: {config['_plan_mode_active']}")
     print(f"  Plan content in result: {'Phase 1' in result}")
     print("  PASS")
 
@@ -126,15 +137,16 @@ def _run(tmpdir):
     print("STEP 6: ExitPlanMode when not in plan mode")
     print(SEP)
     result = _exit_plan_mode({}, config)
-    assert "Not in plan mode" in result
+    assert "未处于计划模式" in result, f"Expected 'not in plan mode' message, got: {result!r}"
     print(f"  {result}")
     print("  PASS")
 
-    # ── Step 7: Plan tools auto-approved in auto mode too ──
+    # ── Step 7: Plan tools auto-approved in all permission modes ──
     print(f"\n{SEP}")
-    print("STEP 7: Plan tools auto-approved in auto mode")
+    print("STEP 7: Plan tools auto-approved in all permission modes")
     print(SEP)
     config["permission_mode"] = "auto"
+    config["_plan_mode_active"] = False
     assert _check_permission({"name": "EnterPlanMode", "input": {}}, config) == True
     assert _check_permission({"name": "ExitPlanMode", "input": {}}, config) == True
     print("  Auto-approved in auto mode")
@@ -151,11 +163,24 @@ def _run(tmpdir):
     print(SEP)
     from context import build_system_prompt
     config["permission_mode"] = "auto"
+    config["_plan_mode_active"] = False
     prompt = build_system_prompt(config)
     assert "EnterPlanMode" in prompt
     assert "ExitPlanMode" in prompt
-    assert "complex" in prompt.lower() or "multi-file" in prompt.lower()
+    assert "complex" in prompt.lower() or "multi-file" in prompt.lower() or "复杂" in prompt
     print("  System prompt references plan tools")
+
+    # Plan mode active → system prompt should include plan file reference
+    config["_plan_mode_active"] = True
+    config["_plan_file"] = str(plan_path)
+    prompt_plan = build_system_prompt(config)
+    assert "计划模式" in prompt_plan, "System prompt should include plan mode section when active"
+    assert str(plan_path) in prompt_plan, "System prompt should reference plan file path"
+    config["_plan_mode_active"] = False
+    prompt_normal = build_system_prompt(config)
+    assert "计划限制层当前处于激活状态" not in prompt_normal, \
+        "Normal mode should NOT have plan mode active instructions"
+    print("  Plan mode active: system prompt injected correctly")
     print("  PASS")
 
     print(f"\n{SEP}")

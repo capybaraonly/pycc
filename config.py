@@ -16,7 +16,7 @@ MR_SESSION_DIR = SESSIONS_DIR / "mr_sessions"
 DEFAULTS = {
     "model":            "deepseek/deepseek-v4-pro",
     "max_tokens":       40000,
-    "permission_mode":  "auto",   # auto | accept-all | manual
+    "permission_mode":  "auto",   # auto | accept-all | manual  (plan mode is a separate runtime overlay)
     "verbose":          False,
     "thinking":         False,
     "thinking_budget":  10000,
@@ -49,6 +49,10 @@ def load_config() -> dict:
     # Backward-compat: legacy single api_key → anthropic_api_key
     if cfg.get("api_key") and not cfg.get("anthropic_api_key"):
         cfg["anthropic_api_key"] = cfg.pop("api_key")
+    # Backward-compat: old configs may have permission_mode == "plan"
+    # Plan mode is now an independent runtime overlay; downgrade silently.
+    if cfg.get("permission_mode") == "plan":
+        cfg["permission_mode"] = "auto"
     # Also accept ANTHROPIC_API_KEY env for backward-compat
     if not cfg.get("anthropic_api_key"):
         cfg["anthropic_api_key"] = os.environ.get("ANTHROPIC_API_KEY", "")

@@ -14,6 +14,7 @@ import tools as _tools_init  # 确保导入时注册内置工具
 from providers import stream, Response, TextChunk, ThinkingChunk, detect_provider
 from compaction import maybe_compact, apply_context_collapse
 from hooks.dispatcher import fire_pre_tool, fire_post_tool, fire_stop
+from plan_mode import is_plan_mode, get_plan_file, is_plan_file_target
 
 # ── 重新导出事件类型（供 pycc.py 使用）────────────────────────
 __all__ = [
@@ -96,7 +97,7 @@ def run(
 
         # 计划模式：每 5 轮注入一条简短的只读提醒
         _reminder_injected = False
-        if (config.get("permission_mode") == "plan"
+        if (is_plan_mode(config)
                 and state.turn_count % 5 == 0
                 and state.turn_count > 0):
             state.messages.append({
@@ -185,7 +186,7 @@ def run(
             else:
                 permitted = _check_permission(toolcall, config)
                 if not permitted:
-                    if config.get("permission_mode") == "plan":
+                    if is_plan_mode(config):
                         # 计划模式：静默拒绝写入操作（无需用户确认）
                         permitted = False
                     else:
@@ -194,12 +195,12 @@ def run(
                         permitted = req.granted
 
             if not permitted:
-                if config.get("permission_mode") == "plan":
-                    plan_file = config.get("_plan_file", "")
+                if is_plan_mode(config):
+                    plan_file = get_plan_file(config)
                     result = (
-                        f"[Plan mode] Write operations are blocked except to the plan file: {plan_file}\n"
+                        f"[Plan mode active] Write operations are blocked except to the plan file: {plan_file}\n"
                         "Finish your analysis and write the plan to the plan file. "
-                        "The user will run /plan done to exit plan mode and begin implementation."
+                        "Call ExitPlanMode when done."
                     )
                 else:
                     result = "Denied: user rejected this operation"
@@ -230,44 +231,46 @@ def run(
 # ── 辅助函数 ───────────────────────────────────────────────────────────────
 
 def _check_permission(toolcall: dict, config: dict) -> bool:
-    """如果操作自动批准，则返回 True（无需询问用户）。"""
-    perm_mode = config.get("permission_mode", "auto")
+    """如果操作自动批准，则返回 True（无需询问用户）。
+
+    检查顺序：
+      1. 计划模式工具 (EnterPlanMode/ExitPlanMode) 始终自动批准
+      2. 计划限制层激活时，按只读约束规则判断
+      3. 按基础 permission_mode (auto/manual/accept-all) 判断
+    """
     name = toolcall["name"]
 
-    # 计划模式工具始终自动批准
+    # 计划模式工具始终自动批准（不受 permission_mode 影响）
     if name in ("EnterPlanMode", "ExitPlanMode"):
         return True
 
-    if perm_mode == "accept-all":
-        return True
-    if perm_mode == "manual":
-        return False   # 始终询问用户
-
-    if perm_mode == "plan":
-        # 仅允许写入计划文件
+    # 计划限制层优先于基础权限模式
+    if is_plan_mode(config):
         if name in ("Write", "Edit"):
-            plan_file = config.get("_plan_file", "")
-            target = toolcall["input"].get("file_path", "")
-            if plan_file and target and \
-               os.path.normpath(target) == os.path.normpath(plan_file):
-                return True
-            return False
+            return is_plan_file_target(config, toolcall["input"].get("file_path", ""))
         if name == "NotebookEdit":
             return False
         if name == "Bash":
             from security.bash_analyzer import analyze_bash, BashRiskLevel
             risk, _ = analyze_bash(toolcall["input"].get("command", ""))
             return risk == BashRiskLevel.safe
-        return True  # 读取操作允许
+        return True  # 读取类工具均允许
 
-    # 自动模式：安全的 Bash 命令自动批准；警告/危险命令 → 询问用户
+    # 基础权限模式
+    perm_mode = config.get("permission_mode", "auto")
+    if perm_mode == "accept-all":
+        return True
+    if perm_mode == "manual":
+        return False   # 始终询问用户
+
+    # auto 模式：安全的 Bash 命令自动批准；写操作 → 询问用户
     if name in ("Read", "Glob", "Grep", "WebFetch", "WebSearch"):
         return True
     if name == "Bash":
         from security.bash_analyzer import analyze_bash, BashRiskLevel
         risk, _ = analyze_bash(toolcall["input"].get("command", ""))
         return risk == BashRiskLevel.safe
-    return False   # 写入、编辑 → 询问用户
+    return False   # Write/Edit/NotebookEdit → 询问用户
 
 
 def _permission_desc(tc: dict) -> str:

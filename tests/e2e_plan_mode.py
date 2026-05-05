@@ -1,4 +1,8 @@
-"""End-to-end test for plan mode."""
+"""End-to-end test for plan mode.
+
+Plan mode is an independent overlay (_plan_mode_active).
+permission_mode ('auto'|'manual'|'accept-all') is never touched by plan mode.
+"""
 from __future__ import annotations
 
 import os
@@ -36,7 +40,6 @@ def test_plan_mode():
     }
     state = FakeState()
 
-    # Import _check_permission from agent
     from agent import _check_permission
 
     print("  PASS")
@@ -57,7 +60,7 @@ def test_plan_mode():
     assert _check_permission(bash_tc, config) == True, "Safe bash should be auto-approved"
     print("  PASS")
 
-    # ── Step 3: Enter plan mode ──
+    # ── Step 3: Enter plan mode (via _plan_mode_active, NOT permission_mode) ──
     print(f"\n{SEP}")
     print("STEP 3: Enter plan mode")
     print(SEP)
@@ -67,12 +70,13 @@ def test_plan_mode():
     plan_path = plans_dir / "plantest.md"
     plan_path.write_text("# Plan: Add WebSocket support\n\n", encoding="utf-8")
 
-    config["_prev_permission_mode"] = config["permission_mode"]
-    config["permission_mode"] = "plan"
+    config["_plan_prev_permission_mode"] = config["permission_mode"]
+    config["_plan_mode_active"] = True
     config["_plan_file"] = str(plan_path)
 
     print(f"  Plan file: {plan_path}")
-    assert config["permission_mode"] == "plan"
+    assert config.get("_plan_mode_active") is True
+    assert config["permission_mode"] == "auto", "permission_mode must stay 'auto'"
     print("  PASS")
 
     # ── Step 4: In plan mode — reads are allowed ──
@@ -111,28 +115,27 @@ def test_plan_mode():
     assert _check_permission(plan_edit_tc, config) == True, "Edit to plan file should be allowed"
     print("  PASS")
 
-    # ── Step 7: Plan file write with normalized path ──
+    # ── Step 7: Plan file detection with path normalisation ──
     print(f"\n{SEP}")
     print("STEP 7: Plan file detection with path normalization")
     print(SEP)
 
-    # Test with slightly different path (e.g., trailing slash, double slash)
     alt_path = str(plan_path).replace("\\", "/")
     alt_write_tc = {"name": "Write", "input": {"file_path": alt_path, "content": "x"}}
     assert _check_permission(alt_write_tc, config) == True, "Normalized path should match plan file"
     print("  PASS")
 
-    # ── Step 8: Exit plan mode ──
+    # ── Step 8: Exit plan mode — permission_mode unchanged ──
     print(f"\n{SEP}")
-    print("STEP 8: Exit plan mode — permissions restored")
+    print("STEP 8: Exit plan mode — permission_mode stays unchanged")
     print(SEP)
 
-    prev = config.pop("_prev_permission_mode", "auto")
-    config["permission_mode"] = prev
+    config["_plan_mode_active"] = False
+    config.pop("_plan_prev_permission_mode", None)
 
-    assert config["permission_mode"] == "auto"
+    assert config["permission_mode"] == "auto", "permission_mode should still be 'auto'"
     # Now writes go back to needing permission (return False in auto mode)
-    assert _check_permission(write_tc, config) == False, "Should be back to auto mode"
+    assert _check_permission(write_tc, config) == False, "Should be back to auto mode behaviour"
     assert _check_permission(read_tc, config) == True, "Reads still auto-approved"
     print("  PASS")
 
@@ -147,25 +150,26 @@ def test_plan_mode():
     print(f"  Plan file content: {content.strip()!r}")
     print("  PASS")
 
-    # ── Step 10: System prompt includes plan mode instructions ──
+    # ── Step 10: System prompt injection when plan mode active ──
     print(f"\n{SEP}")
     print("STEP 10: System prompt injection")
     print(SEP)
 
     # Re-enter plan mode for this test
-    config["permission_mode"] = "plan"
+    config["_plan_mode_active"] = True
     config["_plan_file"] = str(plan_path)
 
     from context import build_system_prompt
     prompt = build_system_prompt(config)
-    assert "Plan Mode (ACTIVE)" in prompt, "System prompt should include plan mode section"
+    assert "计划模式" in prompt, "System prompt should include plan mode section"
     assert str(plan_path) in prompt, "System prompt should reference plan file path"
-    assert "ONLY write to the plan file" in prompt
+    assert "计划文件" in prompt, "System prompt should reference plan file"
 
     # Without plan mode
-    config["permission_mode"] = "auto"
+    config["_plan_mode_active"] = False
     prompt_normal = build_system_prompt(config)
-    assert "Plan Mode" not in prompt_normal, "Normal mode should NOT have plan mode instructions"
+    assert "计划限制层当前处于激活状态" not in prompt_normal, \
+        "Normal mode should NOT have plan mode active instructions"
 
     print("  PASS")
 

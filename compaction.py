@@ -13,6 +13,7 @@ import time as _time
 from pathlib import Path
 
 import providers
+from plan_mode import is_plan_mode
 
 
 # ── Token estimation ──────────────────────────────────────────────────────
@@ -393,7 +394,7 @@ def _restore_active_skills(config: dict, token_budget: int = 25_000) -> list:
 def _restore_plan_context(config: dict) -> list:
     """If in plan mode, return messages that restore plan file context."""
     plan_file = config.get("_plan_file", "")
-    if not plan_file or config.get("permission_mode") != "plan":
+    if not plan_file or not is_plan_mode(config):
         return []
     p = Path(plan_file)
     if not p.exists():

@@ -1090,71 +1090,28 @@ import task.tools as _task_tools  # noqa: F401
 # ── 计划模式工具（EnterPlanMode / ExitPlanMode）─────────────────────────
 
 def _enter_plan_mode(params: dict, config: dict) -> str:
-    """进入计划模式：只读，除计划文件外不可写入。"""
+    """激活计划限制层（Planning Overlay）：仅计划文件可写。"""
     from plan_mode import enter_plan_mode
-    if config.get("permission_mode") == "plan":
-        return "已在计划模式。将计划写入文件，然后调用 ExitPlanMode。"
-
-    session_id = config.get("_session_id", "default")
-    plans_dir = Path.cwd() / ".nano_claude" / "plans"
-    plans_dir.mkdir(parents=True, exist_ok=True)
-    plan_path = plans_dir / f"{session_id}.md"
-
     task_desc = params.get("task_description", "")
-    if not plan_path.exists() or plan_path.stat().st_size == 0:
-        header = f"# 计划：{task_desc}\n\n" if task_desc else "# 计划\n\n"
-        plan_path.write_text(header, encoding="utf-8")
-
-    config["_prev_permission_mode"] = config.get("permission_mode", "auto")
-    config["permission_mode"] = "plan"
-    config["_plan_file"] = str(plan_path)
-
-    return (
-        f"已进入计划模式，当前为只读状态。\n"
-        f"计划文件：{plan_path}\n\n"
-        f"使用说明：\n"
-        f"1. 使用 Read、Glob、Grep、WebSearch 分析项目\n"
-        f"2. 使用 Write 或 Edit 将详细计划写入文件\n"
-        f"3. 完成后调用 ExitPlanMode 申请用户确认\n"
-        f"4. 不要写入其他文件，会被拦截"
-    )
+    message, _ = enter_plan_mode(config, task_desc)
+    return message
 
 
 def _exit_plan_mode(params: dict, config: dict) -> str:
-    """退出计划模式并展示计划供用户审核。"""
-    if config.get("permission_mode") != "plan":
-        return "未在计划模式。请先调用 EnterPlanMode。"
-
-    plan_file = config.get("_plan_file", "")
-    plan_content = ""
-    if plan_file:
-        p = Path(plan_file)
-        if p.exists():
-            plan_content = p.read_text(encoding="utf-8").strip()
-
-    if not plan_content or plan_content == "# 计划":
-        return "计划文件为空。写入计划后再退出。"
-
-    # 恢复权限
-    prev = config.pop("_prev_permission_mode", "auto")
-    config["permission_mode"] = prev
-
-    return (
-        f"已退出计划模式，权限恢复为：{prev}\n"
-        f"计划文件：{plan_file}\n\n"
-        f"计划已准备好供用户审核。\n"
-        f"等待用户批准后开始执行。\n\n"
-        f"--- 计划内容 ---\n{plan_content}"
-    )
+    """停用计划限制层并提交计划供用户审核。"""
+    from plan_mode import exit_plan_mode
+    message, _ = exit_plan_mode(config, require_nonempty=True)
+    return message
 
 
 _PLAN_MODE_SCHEMAS = [
     {
         "name": "EnterPlanMode",
         "description": (
-            "进入计划模式，分析项目并编写执行计划。"
+            "激活计划限制层（Planning Overlay）：分析项目并编写执行计划。"
             "适用于复杂、多文件任务。"
-            "计划模式下仅计划文件可写，其他文件写入会被拦截。"
+            "不会改变基础 permission_mode，仅叠加只读规划约束："
+            "仅计划文件可写，其他文件写入会被拦截。"
         ),
         "input_schema": {
             "type": "object",
@@ -1170,9 +1127,9 @@ _PLAN_MODE_SCHEMAS = [
     {
         "name": "ExitPlanMode",
         "description": (
-            "退出计划模式并提交计划供用户批准。"
-            "写入计划后调用。"
-            "必须获得批准才能开始实现。"
+            "停用计划限制层并提交计划供用户批准。"
+            "写入计划后调用此工具。"
+            "停用后基础 permission_mode 保持不变；必须获得用户批准才能开始实现。"
         ),
         "input_schema": {
             "type": "object",

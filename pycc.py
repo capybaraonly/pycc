@@ -55,6 +55,7 @@ if sys.version_info < (3, 10):
     )
 
 from tools import ask_input_interactive
+from plan_mode import is_plan_mode, enter_plan_mode, exit_plan_mode, get_plan_file
 
 import os
 import re
@@ -1172,24 +1173,23 @@ def cmd_image(args: str, state, config) -> Union[bool, tuple]:
 def cmd_plan(args: str, state, config) -> bool:
     """进入/退出计划模式或查看当前计划。
 
-    /plan <描述>  — 进入计划模式并开始制定计划
+    /plan <描述>  — 激活计划限制层并开始制定计划
     /plan                — 显示当前计划文件内容
-    /plan done           — 退出计划模式，恢复权限
+    /plan done           — 停用计划限制层
     /plan status         — 显示计划模式状态
     """
     arg = args.strip()
 
-    plan_file = config.get("_plan_file", "")
-    in_plan_mode = config.get("permission_mode") == "plan"
+    plan_file = get_plan_file(config)
+    in_plan_mode = is_plan_mode(config)
 
     # 退出计划模式
     if arg == "done":
         if not in_plan_mode:
             err("未处于计划模式。")
             return True
-        prev = config.pop("_prev_permission_mode", "auto")
-        config["permission_mode"] = prev
-        info(f"已退出计划模式，权限模式恢复为: {prev}")
+        message, _ = exit_plan_mode(config, require_nonempty=False)
+        info("计划限制层已停用。")
         if plan_file:
             info(f"计划已保存至: {plan_file}")
             info("现在可以让 Claude 执行该计划。")
@@ -1198,11 +1198,13 @@ def cmd_plan(args: str, state, config) -> bool:
     # 查看计划模式状态
     if arg == "status":
         if in_plan_mode:
-            info(f"计划模式: 已激活")
+            info("计划模式: 已激活")
+            info(f"基础权限模式: {config.get('permission_mode', 'auto')}")
             info(f"计划文件: {plan_file}")
-            info(f"仅计划文件可写入，使用 /plan done 退出。")
+            info("使用 /plan done 退出。")
         else:
             info("计划模式: 未激活")
+            info(f"基础权限模式: {config.get('permission_mode', 'auto')}")
         return True
 
     # 无参数：显示计划内容
@@ -1223,19 +1225,9 @@ def cmd_plan(args: str, state, config) -> bool:
         err("已处于计划模式，先使用 /plan done 退出。")
         return True
 
-    # 创建计划文件
-    session_id = config.get("_session_id", "default")
-    plans_dir = Path.cwd() / ".nano_claude" / "plans"
-    plans_dir.mkdir(parents=True, exist_ok=True)
-    plan_path = plans_dir / f"{session_id}.md"
-    plan_path.write_text(f"# 计划: {arg}\n\n", encoding="utf-8")
-
-    # 切换到计划模式
-    config["_prev_permission_mode"] = config.get("permission_mode", "auto")
-    config["permission_mode"] = "plan"
-    config["_plan_file"] = str(plan_path)
-
-    info("计划模式已激活(仅计划文件可写入)。")
+    # 激活计划限制层
+    message, plan_path = enter_plan_mode(config, arg)
+    info("计划限制层已激活(仅计划文件可写入)。")
     info(f"计划文件: {plan_path}")
     info("使用 /plan done 退出并开始执行。")
     print()
@@ -1413,11 +1405,13 @@ def cmd_status(args: str, state, config) -> bool:
     est_ctx = estimate_tokens(getattr(state, "messages", []))
     ctx_limit = get_context_limit(model)
     ctx_pct = (est_ctx / ctx_limit * 100) if ctx_limit else 0
-    plan_mode = config.get("permission_mode") == "plan"
+    plan_mode = is_plan_mode(config)
 
     print(f"  版本:     {VERSION}")
     print(f"  模型:       {model} ({provider})")
-    print(f"  权限: {perm_mode}" + (" [计划模式]" if plan_mode else ""))
+    print(f"  权限: {perm_mode}" + (" [计划模式激活]" if plan_mode else ""))
+    if plan_mode:
+        print(f"  计划文件: {get_plan_file(config)}")
     print(f"  会话:     {session_id}")
     print(f"  轮次:       {turn_count}")
     print(f"  消息:    {msg_count}")
@@ -1807,9 +1801,11 @@ def repl(config: dict, initial_prompt: str = None):
         pmode     = clr(config.get("permission_mode", "auto"), "yellow")
         ver_clr   = clr(f"v{VERSION}", "green")
 
+        plan_active = is_plan_mode(config)
+        plan_suffix = clr(" [计划模式]", "magenta", "bold") if plan_active else ""
         print(clr("  ╭─ ", "dim") + clr("pycc ", "cyan", "bold") + ver_clr + clr(" ─────────────────────────────────╮", "dim"))
         print(clr("  │", "dim") + clr("  模型: ", "dim") + model_clr + " " + prov_clr)
-        print(clr("  │", "dim") + clr("  权限: ", "dim") + pmode)
+        print(clr("  │", "dim") + clr("  权限: ", "dim") + pmode + plan_suffix)
         print(clr("  │", "dim") + clr("  /model 切换模型 · /help 查看命令", "dim"))
         print(clr("  ╰──────────────────────────────────────────────────────╯", "dim"))
 
@@ -2132,7 +2128,13 @@ def repl(config: dict, initial_prompt: str = None):
             if result[0] == "__plan__":
                 _, plan_desc = result
                 try:
-                    run_query(f"请分析代码库并为以下需求制定详细的执行计划: {plan_desc}")
+                    _plan_file_path = get_plan_file(config)
+                    _plan_note = (
+                        f"\n\n你已通过 EnterPlanMode 进入计划限制阶段。"
+                        f"请把完整计划写入计划文件（{_plan_file_path}），"
+                        f"完成后调用 ExitPlanMode。"
+                    ) if _plan_file_path else ""
+                    run_query(f"请分析代码库并为以下需求制定详细的执行计划: {plan_desc}{_plan_note}")
                 except KeyboardInterrupt:
                     _track_ctrl_c()
                     print(clr("\n  (已中断)", "yellow"))

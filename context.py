@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 
 from memory import get_memory_context
+from plan_mode import is_plan_mode, get_plan_file
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -251,17 +252,17 @@ def build_system_prompt(config: dict | None = None) -> str:
     if retrieved:
         dynamic += f"\n\n# 已检索记忆（根据当前上下文筛选）\n{retrieved}\n"
 
-    # ── 计划模式附加内容 ─────────────────────────────────────────────────
-    if cfg.get("permission_mode") == "plan":
-        plan_file = cfg.get("_plan_file", "")
+    # ── 计划限制层附加内容（独立于 permission_mode）────────────────────────
+    if is_plan_mode(cfg):
+        plan_file = get_plan_file(cfg)
         dynamic += (
             "\n\n# 计划模式（已激活）\n"
-            "当前处于计划模式：\n"
+            "计划限制层当前处于激活状态（不影响基础 permission_mode）：\n"
             "- 仅允许使用只读工具：Read、Glob、Grep、WebFetch、WebSearch\n"
-            f"- 仅允许写入规划文件：{plan_file}\n"
+            f"- 仅允许写入计划文件：{plan_file}\n"
             "- 禁止对其他文件执行 Write/Edit\n"
             "- 使用 TaskCreate 将计划拆分为可跟踪步骤\n"
-            "- 完成后告知用户执行 /plan done 开始实施\n"
+            "- 完成后调用 ExitPlanMode 或由用户执行 /plan done\n"
         )
 
     return SYSTEM_PROMPT_STATIC + _DYNAMIC_BOUNDARY + dynamic

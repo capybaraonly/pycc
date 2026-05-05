@@ -84,7 +84,7 @@ def test_compact():
     tmpdir = Path(tempfile.mkdtemp())
     plan_file = tmpdir / "plan.md"
     plan_file.write_text("# Plan\n\n1. Do stuff\n2. More stuff\n", encoding="utf-8")
-    config = {"permission_mode": "plan", "_plan_file": str(plan_file)}
+    config = {"permission_mode": "auto", "_plan_mode_active": True, "_plan_file": str(plan_file)}
     result = _restore_plan_context(config)
     assert len(result) == 2
     assert "Plan file restored" in result[0]["content"]
