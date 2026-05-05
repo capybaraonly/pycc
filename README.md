@@ -25,7 +25,7 @@ python pycc.py                 # 启动 REPL
 | 任务管理 | TaskCreate/Update/Get/List 工具；顺序 ID；元数据；持久化至 `.pycc/tasks.json`；`/tasks` REPL 命令 |
 | 差异视图 | Edit 和 Write 操作后显示 git 风格的红绿差异 |
 | 上下文压缩 | 五层渐进式压缩策略（磁盘卸载→旧轮次移除→可复现工具结果清除→读时投影→LLM摘要），按内容可恢复性决定驱逐优先级；读时投影在 API 调用瞬间生成压缩视图而不修改原始历史 |
-| 持久记忆 | 双作用域记忆（user + project），4 种类型，置信度/来源元数据，冲突检测，按使用频率加权搜索，`last_used_at` 追踪，以及 `/memory consolidate` 自动提炼 |
+| 持久记忆 | 三层管道：每轮后台检索（flash 模型并行选 ≤5 条注入）→ 会话结束自动提取（Layer 2，条件触发）→ AutoDream 周期整合去重（Layer 3，每 5 次会话）；双作用域（user + project），4 种类型，严格代码事实豁免 |
 | 多智能体 | 派发类型化子智能体（coder/reviewer/researcher/…），git worktree 隔离，后台模式 |
 | 技能系统 | 内置 `/commit` · `/review` + 支持参数替换的自定义 Markdown 技能 |
 | 权限系统 | `auto` / `accept-all` / `manual` 三种模式 |
@@ -227,46 +227,6 @@ pycc --model minimax/abab6.5s-chat
 
 ---
 
-## 用法：自建推理服务器
-
-适用于自建推理服务器（vLLM、TGI、llama.cpp server 等）暴露 OpenAI 兼容 API 的情况：
-
-**第一步：启动 vLLM：**
-
-```
-CUDA_VISIBLE_DEVICES=7 python -m vllm.entrypoints.openai.api_server \
-      --model Qwen/Qwen2.5-Coder-7B-Instruct \
-      --host 0.0.0.0 \
-      --port 8000 \
-      --enable-auto-tool-choice \
-      --tool-call-parser hermes
-```
-
-**第二步：启动 pycc：**
-
-```
-export CUSTOM_BASE_URL=http://localhost:8000/v1
-export CUSTOM_API_KEY=none
-pycc --model custom/Qwen/Qwen2.5-Coder-7B-Instruct
-```
-
-在 REPL 内配置：
-
-```
-/config custom_base_url=http://localhost:8000/v1
-/config custom_api_key=token-abc123    # 无鉴权则跳过
-/model custom/Qwen2.5-Coder-32B-Instruct
-```
-
-远程 GPU 服务器：
-
-```bash
-/config custom_base_url=http://192.168.1.100:8000/v1
-/model custom/your-model-name
-```
-
----
-
 ## 模型名称格式
 
 支持三种等价格式：
@@ -367,9 +327,9 @@ pycc --thinking --verbose
 | `/permissions <mode>` | 设置权限模式：`auto` / `accept-all` / `manual` |
 | `/cwd` | 显示当前工作目录 |
 | `/cwd <path>` | 更改工作目录 |
-| `/memory` | 列出所有持久记忆 |
-| `/memory <query>` | 按关键词搜索记忆（按置信度 × 近期度排序） |
-| `/memory consolidate` | AI 从当前会话中提炼最多 3 条长期洞察 |
+| `/memory` | 列出所有持久记忆（按修改时间排序） |
+| `/memory <query>` | 按关键词搜索记忆 |
+| `/memory consolidate` | 立即触发 Layer 3 整合：去重、合并、清理过时记忆 |
 | `/skills` | 列出可用技能 |
 | `/agents` | 显示子智能体任务状态 |
 | `/mcp` | 列出已配置的 MCP 服务器及其工具 |
@@ -558,84 +518,98 @@ MCP 工具从已配置的服务器自动发现，以 `mcp__<server>__<tool>` 格
 
 ## 记忆系统
 
-模型可以通过内置记忆系统跨对话记住信息。
+pycc 内置三层记忆管道，让助手能够跨对话积累上下文。所有层均异步运行，不阻塞主交互循环。
 
-### 存储
+### 存储结构
 
-记忆以独立 Markdown 文件形式保存在两个作用域中：
+记忆以独立 Markdown 文件形式保存，每条记忆一个文件：
 
 | 作用域 | 路径 | 可见性 |
 |---|---|---|
 | **User**（默认）| `~/.pycc/memory/` | 跨所有项目共享 |
-| **Project** | 当前目录下的 `.pycc/memory/` | 仅限当前仓库 |
+| **Project** | `.pycc/memory/`（当前目录）| 仅限当前仓库 |
 
-每次保存或删除后自动重建 `MEMORY.md` 索引（≤ 200 行 / 25 KB），并注入系统提示，让模型始终有记忆概览。
+每次写入或删除后，`MEMORY.md` 索引自动重建（≤ 200 行 / 25 KB），并注入系统提示，让模型始终有记忆概览。
 
 ### 记忆类型
 
-| 类型 | 适用于 |
+| 类型 | 保存什么 |
 |---|---|
-| `user` | 你的角色、偏好、背景 |
-| `feedback` | 你希望模型如何表现（纠正与确认） |
-| `project` | 进行中的工作、截止日期、git 历史中没有的决策 |
-| `reference` | 指向外部系统的链接（Linear、Grafana、Slack 等） |
+| `user` | 你的角色、技能水平、工作风格、明确的偏好 |
+| `feedback` | 纠正或确认模型做事方式的指令（"如何做"，而非"做什么代码"） |
+| `project` | 进行中的目标、截止日期、git 历史中没有的决策 |
+| `reference` | 指向外部系统的指针（Linear、Grafana、Slack 频道等） |
+
+**代码事实豁免（严格执行）：** 文件路径、函数名、代码架构、调试方案、git 历史——任何可以通过 `grep`/`git` 从代码库直接读取的内容均**不保存**为记忆。
 
 ### 记忆文件格式
 
-每条记忆是一个带 YAML 前置元数据的 Markdown 文件：
-
 ```markdown
 ---
-name: coding_style
-description: Python 格式偏好
+name: prefers_direct_answers
+description: 用户希望回答简洁，不要冗余总结
 type: feedback
-created: 2026-04-02
-confidence: 0.95
-source: user
-last_used_at: 2026-04-05
-conflict_group: coding_style
+created: 2026-05-01
 ---
-Python 代码一律使用 4 空格缩进和完整类型标注。
-**Why:** 用户明确声明了此偏好。
-**How to apply:** 对每个写入或编辑的 Python 文件应用。
+不要在每次回复末尾添加"总结"段落。
+**Why:** 用户说可以自己看 diff，不需要重复叙述。
+**How to apply:** 回复结束时直接停止，不加总结句。
 ```
 
-**元数据字段**（自动管理）：
-
-| 字段 | 默认值 | 说明 |
-|---|---|---|
-| `confidence` | `1.0` | 可靠性评分 0–1。用户明确陈述 = 1.0；推断偏好 ≈ 0.8；自动提炼 ≈ 0.8 |
-| `source` | `user` | 来源：`user` / `model` / `tool` / `consolidator` |
-| `last_used_at` | — | 每次被 MemorySearch 返回时自动更新 |
-| `conflict_group` | — | 对相关记忆分组（如 `writing_style`）以追踪冲突 |
-
-### 冲突检测
-
-当 `MemorySave` 被调用且名称已存在但内容不同时，系统在覆盖前报告冲突：
+### 三层记忆管道
 
 ```
-Memory saved: 'writing_style' [feedback/user]
-⚠ Replaced conflicting memory (was user-sourced, 100% confidence, written 2026-04-01).
-  Old content: Prefer formal, academic style...
+会话进行中        每次查询前 → 后台检索线程（flash 模型）→ 注入系统提示
+                                     ↓
+会话结束时        Layer 2：自动提取（条件触发，flash 模型，后台线程）
+                  Layer 3：AutoDream（每 5 次会话 + 24h 冷却，后台线程）
 ```
 
-### 排序检索
+**检索（每轮查询）**
 
-`MemorySearch` 按**置信度 × 近期度**（30 天指数衰减）排序，而非简单关键词顺序。长期未使用的记忆优先级降低。每次搜索命中还会更新 `last_used_at`，让常用记忆保持靠前。
+每次用户输入时，后台线程并行扫描所有记忆文件头，用 `subagent_model`（默认 `deepseek-v4-flash`）选出最相关的 ≤ 5 条，注入当轮系统提示。整个过程与主 API 调用并行，零等待。
 
-### `/memory consolidate` — 自动提炼长期洞察
+**Layer 2 — 自动提取（会话结束时）**
 
-有意义的会话结束后，运行：
+触发条件（全部满足）：
+- 会话时长 ≥ 5 分钟
+- 对话轮次 ≥ 10 轮
+- 距上次提取 ≥ 30 分钟
+
+满足条件时，启动后台线程，将会话摘要发送给 flash 模型，严格执行代码事实豁免，将识别出的 user / feedback / project / reference 记忆写入磁盘。用户无感知，不延迟退出。
+
+**Layer 3 — AutoDream（周期整合）**
+
+触发条件：距上次整合 ≥ 24 小时，且已积累 ≥ 5 次会话。
+
+后台线程让 flash 模型扫描全部记忆，执行：去重（合并内容重复的条目）、删除超过 90 天的时效性记忆（通用偏好不受影响）。
+
+### 手动操作
+
+**REPL 命令：**
 
 ```
-[myproject] ❯ /memory consolidate
-  正在从会话中分析长期记忆...
-  ✓ 已提炼 2 条记忆：user_prefers_direct_answers, avoid_trailing_summaries
+/memory                  列出所有记忆（按修改时间排序）
+/memory <关键词>          按关键词搜索
+/memory consolidate      立即触发 Layer 3 整合（同步，会显示结果）
 ```
 
-该命令将精简版会话记录发送给模型，要求它识别最多 **3** 条值得长期保留的洞察。提炼的记忆以 `confidence: 0.80` 和 `source: consolidator` 保存——**绝不覆盖**已有更高置信度的记忆。
+**工具（模型可直接调用）：**
 
-**陈旧警告：** 超过 1 天的记忆会显示 `⚠ stale` 提示——关于文件行号或代码状态的声明可能已过时，行动前请核实。
+| 工具 | 作用 |
+|---|---|
+| `MemorySave` | 保存或更新一条记忆（name、type、description、content、scope） |
+| `MemoryDelete` | 按名称删除记忆 |
+| `MemorySearch` | 关键词搜索，可选 AI 排序 |
+| `MemoryList` | 列出所有记忆及元数据 |
+
+### 配置
+
+`subagent_model` 控制所有记忆操作使用的轻量模型（检索、提取、整合），默认 `deepseek/deepseek-v4-flash`，可独立于主模型配置：
+
+```
+/config subagent_model=deepseek/deepseek-v4-flash
+```
 
 ---
 

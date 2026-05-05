@@ -491,6 +491,26 @@ def save_latest(args: str, state, config=None) -> bool:
     ok(f"             → {SESSION_HIST_FILE}  ({len(hist['sessions'])} 个会话 / {hist['total_turns']} 总轮次)")
     return True
 
+
+def _trigger_session_end_memory(state, config: dict, start_time: float | None = None) -> None:
+    """Fire background auto-extraction and AutoDream at session end."""
+    try:
+        from memory.auto_extractor import maybe_extract_memories
+        from memory.dream import increment_session_count, maybe_run_dream
+
+        t0 = start_time or config.get("_session_start_time", _time.monotonic())
+        maybe_extract_memories(
+            messages=list(state.messages),
+            config=config,
+            session_start_time=t0,
+            turn_count=getattr(state, "turn_count", 0),
+        )
+        increment_session_count()
+        maybe_run_dream(config)
+    except Exception:
+        pass
+
+
 # 加载会话
 def cmd_load(args: str, state, config) -> bool:
     from config import SESSIONS_DIR, MR_SESSION_DIR, DAILY_DIR
@@ -825,6 +845,7 @@ def cmd_exit(_args: str, _state, config) -> bool:
         sys.stdout.flush()
     ok("再见！")
     save_latest("", _state, config)
+    _trigger_session_end_memory(_state, config)
     sys.exit(0)
 
 # 管理记忆功能
@@ -833,6 +854,17 @@ def cmd_memory(args: str, _state, config) -> bool:
     from memory.scan import scan_all_memories, memory_freshness_text
 
     stripped = args.strip()
+
+    # /memory consolidate — manual Layer 3 trigger
+    if stripped == "consolidate":
+        info("正在整合记忆（使用轻量模型）…")
+        try:
+            from memory.dream import consolidate
+            result = consolidate(config)
+            ok(result)
+        except Exception as e:
+            err(f"整合失败: {e}")
+        return True
 
     if stripped:
         results = search_memory(stripped)
@@ -1790,6 +1822,8 @@ def repl(config: dict, initial_prompt: str = None):
     import uuid as _uuid
     config.setdefault("_session_id", str(_uuid.uuid4()))
     config.setdefault("_cwd", str(Path.cwd()))
+    _session_start_time = _time.monotonic()
+    config["_session_start_time"] = _session_start_time
     # 欢迎横幅
     if not initial_prompt:
         from providers import detect_provider
@@ -2102,6 +2136,7 @@ def repl(config: dict, initial_prompt: str = None):
                 save_latest("", state, config)
             except Exception as e:
                 warn(f"退出时自动保存失败: {e}")
+            _trigger_session_end_memory(state, config, _session_start_time)
             if _bpm_active:
                 sys.stdout.write("\x1b[?2004l")
                 sys.stdout.flush()

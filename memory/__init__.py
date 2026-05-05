@@ -59,6 +59,12 @@ from .retriever import (  # noqa: F401
     load_selected_memories,
     memory_freshness_warning,
 )
+from .auto_extractor import maybe_extract_memories  # noqa: F401
+from .dream import (  # noqa: F401
+    consolidate,
+    increment_session_count,
+    maybe_run_dream,
+)
 __all__ = [
     # store
     "MemoryEntry",
@@ -97,4 +103,10 @@ __all__ = [
     "select_relevant_memories",
     "load_selected_memories",
     "memory_freshness_warning",
+    # auto_extractor (Layer 2)
+    "maybe_extract_memories",
+    # dream (Layer 3)
+    "consolidate",
+    "increment_session_count",
+    "maybe_run_dream",
 ]

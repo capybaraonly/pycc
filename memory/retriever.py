@@ -143,8 +143,9 @@ def select_relevant_memories(
         from providers import stream, TextChunk
 
         result_text = ""
+        flash = config.get("subagent_model", config.get("model", "deepseek/deepseek-v4-flash"))
         for event in stream(
-            model=config.get("model", "claude-haiku-4-5-20251001"),
+            model=flash,
             system=system,
             messages=[{"role": "user", "content": user_msg}],
             tool_schemas=[],

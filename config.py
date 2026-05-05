@@ -15,6 +15,7 @@ MR_SESSION_DIR = SESSIONS_DIR / "mr_sessions"
 
 DEFAULTS = {
     "model":            "deepseek/deepseek-v4-pro",
+    "subagent_model":   "deepseek/deepseek-v4-flash",  # lightweight model for memory ops
     "max_tokens":       40000,
     "permission_mode":  "auto",   # auto | accept-all | manual  (plan mode is a separate runtime overlay)
     "verbose":          False,
