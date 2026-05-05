@@ -24,12 +24,12 @@ python pycc.py                 # 启动 REPL
 | AskUserQuestion | Claude 可在任务中途暂停并向用户提问，支持编号选项 |
 | 任务管理 | TaskCreate/Update/Get/List 工具；顺序 ID；元数据；持久化至 `.pycc/tasks.json`；`/tasks` REPL 命令 |
 | 差异视图 | Edit 和 Write 操作后显示 git 风格的红绿差异 |
-| 上下文压缩 | 自动压缩长对话以保持在模型上下文限制内 |
+| 上下文压缩 | 五层渐进式压缩策略（磁盘卸载→旧轮次移除→可复现工具结果清除→读时投影→LLM摘要），按内容可恢复性决定驱逐优先级；读时投影在 API 调用瞬间生成压缩视图而不修改原始历史 |
 | 持久记忆 | 双作用域记忆（user + project），4 种类型，置信度/来源元数据，冲突检测，按使用频率加权搜索，`last_used_at` 追踪，以及 `/memory consolidate` 自动提炼 |
 | 多智能体 | 派发类型化子智能体（coder/reviewer/researcher/…），git worktree 隔离，后台模式 |
 | 技能系统 | 内置 `/commit` · `/review` + 支持参数替换的自定义 Markdown 技能 |
 | 权限系统 | `auto` / `accept-all` / `manual` 三种模式 |
-| 计划模式 | 独立规划限制层（不修改 `permission_mode`）；`/plan <描述>` 或 `EnterPlanMode` 激活，仅计划文件可写；`ExitPlanMode` / `/plan done` 停用 |
+| 计划模式 | 两阶段规划-执行切换；`EnterPlanMode` 激活独立限制层（不修改 `permission_mode`），plan 阶段通过代码层权限拦截强制只读（仅计划文件可写），`ExitPlanMode` 输出方案后暂停等待用户确认，用权限机制而非 prompt 约束保证隔离 |
 | 视觉输入 | `/image`（或 `/img`）截取剪贴板图片并发送给任意视觉模型 |
 | 强制退出 | 2 秒内连按 3 次 Ctrl+C 触发 `os._exit(1)`，立即终止进程 |
 | Rich 流式渲染 | 安装 `rich` 后，响应以实时更新的 Markdown 原地渲染 |
@@ -881,13 +881,19 @@ Claude 可以在任务中途暂停，交互式地向你提问后再继续。
 
 ## 计划模式
 
-计划模式是一种处理复杂多文件任务的结构化工作流：Claude 先在只读阶段分析代码库并撰写明确计划，用户批准后再开始实施。
+计划模式通过 `EnterPlanMode` / `ExitPlanMode` 工具实现**两阶段规划-执行切换**：plan 阶段强制只读分析、输出方案后暂停，用户确认后进入执行阶段，**用代码层权限拦截而非 prompt 约束保证隔离**。
 
-**关键设计**：计划模式是独立于 `permission_mode` 的运行时限制层（Planning Overlay）。激活/停用不会修改 `permission_mode`（`auto`/`manual`/`accept-all`），两者正交运作。
+**架构设计**：计划模式是独立于 `permission_mode` 的运行时限制层（Planning Overlay），激活/停用不会修改 `permission_mode`（`auto`/`manual`/`accept-all`），两者正交运作。权限判断在 `agent.py::_check_permission()` 的代码层完成，模型无法绕过。
+
+**两阶段工作流：**
+
+| 阶段 | 触发 | 限制 | 可写文件 |
+|---|---|---|---|
+| Plan 阶段 | `EnterPlanMode` | 仅读取工具 + 安全 Bash | 仅 `.nano_claude/plans/<session>.md` |
+| 执行阶段 | 用户确认后 | 由基础 `permission_mode` 决定 | 正常权限 |
 
 在计划模式下：
-- **只允许读取**（`Read`、`Glob`、`Grep`、`WebFetch`、`WebSearch`、安全的 `Bash` 命令）。
-- **写入被阻止**，仅限**专属计划文件**（`.nano_claude/plans/<session_id>.md`）。
+- **写入被拦截**（代码层，非 prompt），仅**专属计划文件**例外。
 - 压缩后计划文件上下文自动恢复。
 
 ### 斜杠命令工作流
@@ -923,14 +929,19 @@ Claude 可以在任务中途暂停，交互式地向你提问后再继续。
 
 ## 上下文压缩
 
-长对话会自动压缩以保持在模型上下文窗口内。
+长对话超过模型上下文窗口时自动触发，采用**五层渐进式压缩策略**，按内容可恢复性决定驱逐优先级——可重新获取的内容（工具执行结果）优先清除，不可复现的对话语义最后处理。
 
-**两个层次：**
+### 五层压缩机制
 
-1. **截断** — 旧的工具输出被截断。速度快，无 API 费用。
-2. **自动压缩** — 当 token 用量超过上下文限制的 70% 时，旧消息由模型摘要为简洁回顾。
+| 层级 | 触发时机 | 机制 | 信息损失 |
+|---|---|---|---|
+| **Layer 1** 磁盘卸载 | 工具结果生成时 | 超过阈值的大型工具输出写入磁盘，context 中保留摘要引用；Read 可随时重取 | 无 |
+| **Layer 2** 旧轮次移除 | 超过 70% 上下文 | 移除最早的完整对话轮次（user+assistant+tool），保留最近 N 轮 | 有（旧轮次） |
+| **Layer 3** 可复现结果清除 | 空闲超过 60 分钟 | 清除 Read/Bash/Glob/Grep 等工具的旧结果（可重新执行获取），保留最近 5 条 | 极低（可重取） |
+| **Layer 4** 读时投影 | 每次 API 调用前 | **不修改原始 messages**；在 API 调用瞬间生成压缩视图（90% 阈值保留 40% token，95% 阈值保留 25%） | 无（原始历史完整保留） |
+| **Layer 5** LLM 摘要 | 超过 70% 且前几层不足 | 调用模型将旧消息压缩为语义摘要，压缩后恢复计划文件/技能上下文 | 有（细节） |
 
-**手动压缩：**
+### 手动压缩
 
 ```
 [myproject] ❯ /compact
