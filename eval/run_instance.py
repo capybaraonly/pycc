@@ -65,14 +65,10 @@ def run_pycc(problem_statement: str, repo_dir: Path, model: str,
     """
     prompt = _build_prompt(problem_statement)
 
-    # Prefer installed pycc; fall back to running pycc.py from project root
+    # Always use source pycc.py to avoid stale installed binaries
     pycc_root = Path(__file__).resolve().parent.parent
-    pycc_bin = shutil.which("pycc")
-    if pycc_bin:
-        cmd = [pycc_bin, "--print", "--accept-all", "--model", model, prompt]
-    else:
-        cmd = [sys.executable, str(pycc_root / "pycc.py"),
-               "--print", "--accept-all", "--model", model, prompt]
+    cmd = [sys.executable, str(pycc_root / "pycc.py"),
+           "--print", "--accept-all", "--model", model, prompt]
 
     env = dict(os.environ)
     env["PYCC_NO_HISTORY"] = "1"   # skip readline history in batch mode

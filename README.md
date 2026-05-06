@@ -38,6 +38,7 @@ python pycc.py                 # 启动 REPL
 | Extended Thinking | Claude 模型可开/关 |
 | 费用追踪 | Token 用量 + 估算 USD 费用 |
 | 非交互模式 | `--print` 标志用于脚本/CI |
+| SWE-bench 评测 | 完整评测管道（`eval/`）；30 实例子集官方 Docker 评测 70% resolve rate（deepseek-v4-pro，存在数据污染风险，全量待测） |
 
 ---
 
@@ -1047,3 +1048,51 @@ pycc/
 echo "解释这个文件" | pycc --print --accept-all
 cat error.log | pycc -p "这个错误是什么原因导致的？"
 ```
+
+---
+
+## SWE-bench Lite 评测
+
+`eval/` 目录提供完整的评测管道，可在 SWE-bench Lite（300 个真实 GitHub issue）上系统测试 pycc 的 bug 修复能力。
+
+### 评测流程
+
+1. 从 HuggingFace 加载数据集，每个实例包含：repo、base commit、原始 issue 正文（`problem_statement`）、FAIL_TO_PASS 测试用例
+2. 将仓库 clone 到 bug 发生时的 commit
+3. 将 issue 正文直接作为 prompt 传给 pycc（`--print --accept-all`），模型自主探索代码库并写修复
+4. `git diff` 提取 patch
+5. 打分：启发式代理（无需 Docker）或官方 Docker 评测
+
+```bash
+# 运行 30 个实例
+python eval/batch_eval.py --n 30 --workers 2 --workdir /tmp/pycc_swe \
+    --model deepseek/deepseek-v4-pro --timeout 600
+
+# 启发式打分（快速）
+python eval/score.py --workdir /tmp/pycc_swe
+
+# 官方 Docker 打分（精确）
+python eval/score.py --workdir /tmp/pycc_swe --official
+```
+
+### 当前结果（30 实例子集，2026-05-06）
+
+| 指标 | 数值 |
+|---|---|
+| 运行实例数 | 30 |
+| 生成 patch | 28 / 30 |
+| 超时（900s）| 2 |
+| patch 格式错误 | 2 |
+| **官方 Docker resolve rate** | **21 / 30（70%）** |
+
+模型：`deepseek/deepseek-v4-pro`，per-instance timeout：600-900s
+
+### 局限性
+
+**样本偏差**：30 个实例全部来自 astropy 和 django，均为极主流的 Python 项目，代表性有限。完整 300 实例还包括 sympy、matplotlib、requests 等分布更广的仓库，全量结果预计会显著下降。
+
+**数据污染风险**：SWE-bench Lite 实例对应的 gold patch 均已在 GitHub 公开，deepseek-v4-pro 训练数据可能覆盖了这些修复 commit，导致模型部分依赖"记忆"而非推理。
+
+**无 max_turns 限制**：当前 agent 循环没有轮次上限，极端情况下可能陷入长时间探索而不收敛，只能依赖外层 subprocess timeout 兜底。
+
+**全量评测**：尚未完成全部 300 实例的官方评测，70% 不应作为最终基准。

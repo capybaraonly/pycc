@@ -1822,7 +1822,7 @@ def repl(config: dict, initial_prompt: str = None):
     import uuid as _uuid
     config.setdefault("_session_id", str(_uuid.uuid4()))
     config.setdefault("_cwd", str(Path.cwd()))
-    _session_start_time = _time.monotonic()
+    _session_start_time = time.monotonic()
     config["_session_start_time"] = _session_start_time
     # 欢迎横幅
     if not initial_prompt:
